@@ -118,9 +118,9 @@ export default function CursoCard({ curso, docentes }: CursoCardProps) {
                 <TableCell>{docente.email}</TableCell>
                 <TableCell>{docente.departamento}</TableCell>
                 <TableCell>
-                  <Link href={`/gestion-docentes/${docente.id}`}>
-                    <Button size="sm" variant="outline">Ver Perfil</Button>
-                  </Link>
+                    <Link   href={`/perfil-docente/${docente.id}`} className="text-blue-600 hover:underline">
+                      Ver Perfil
+                    </Link>   
                 </TableCell>
               </TableRow>
             ))}
