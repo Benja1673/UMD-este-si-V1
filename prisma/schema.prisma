@@ -28,7 +28,6 @@ model User {
   // Relaciones
   departamento     Departamento?     @relation(fields: [departamentoId], references: [id], onUpdate: NoAction)
   certificados     Certificado[]
-  cursosImpartidos Curso[]           @relation("UserInstructor")
   inscripciones    InscripcionCurso[]
 
   @@map("users")
@@ -76,7 +75,7 @@ model Curso {
   updatedAt         DateTime            @updatedAt
   categoriaId       String
   departamentoId    String
-  instructorId      String?
+  instructor      String?
   tipo              String              @default("Curso")
   ano               Int                 @default(2025)
 
@@ -85,7 +84,7 @@ model Curso {
   esPrerrequisitoDE CursoPrerequisito[] @relation("CursoPrerequisito")
   categoria         Categoria           @relation(fields: [categoriaId], references: [id], onUpdate: NoAction)
   departamento      Departamento        @relation(fields: [departamentoId], references: [id], onUpdate: NoAction)
-  instructor        User?               @relation("UserInstructor", fields: [instructorId], references: [id], onUpdate: NoAction)
+
   inscripciones     InscripcionCurso[]
 
   @@map("cursos")

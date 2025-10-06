@@ -203,9 +203,11 @@ export default function GestionCursosPage() {
       <div className="bg-white rounded-lg shadow p-6">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-800">Gestión de Cursos</h1>
-          <Button onClick={handleNuevoCurso} className="bg-blue-600 hover:bg-blue-700">
-            <Plus className="mr-2 h-4 w-4" /> Nuevo Curso
+<Link href="/gestion-cursos/crear">
+          <Button className="bg-blue-600 hover:bg-blue-700">
+            Nuevo Curso
           </Button>
+        </Link>
         </div>
 
         <div className="flex flex-col md:flex-row gap-4 mb-6">
