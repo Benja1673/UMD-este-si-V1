@@ -25,7 +25,6 @@ type Curso = {
   rut: string
   correo: string
   departamento: string
-  estado: "Aprobado" | "No aprobado" | "No inscrito"
 }
 
 export default function GestionCursosPage() {
@@ -35,7 +34,7 @@ export default function GestionCursosPage() {
   const [error, setError] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState("")
   const [filtroDepto, setFiltroDepto] = useState<string>("todos")
-  const [filtroEstado, setFiltroEstado] = useState<string>("todos")
+  const [filtroNivel, setFiltroNivel] = useState<string>("todos"); // Nuevo filtro por nivel
   const [cabecerasFijadas, setCabecerasFijadas] = useState(false)
 
   const [cursoActual, setCursoActual] = useState<Curso | null>(null)
@@ -53,7 +52,6 @@ export default function GestionCursosPage() {
     rut: "",
     correo: "",
     departamento: "",
-    estado: "Aprobado" as "Aprobado" | "No aprobado" | "No inscrito",
   })
 
   const [filtrosColumna, setFiltrosColumna] = useState<{ [key: string]: string[] }>({})
@@ -81,7 +79,6 @@ export default function GestionCursosPage() {
           rut: c.rut ?? "",
           correo: c.correo ?? "",
           departamento: c.departamento?.nombre ?? "",
-          estado: c.estado ?? "Aprobado",
         }))
 
         setCursos(adaptados)
@@ -114,8 +111,9 @@ export default function GestionCursosPage() {
       resultado = resultado.filter((c) => c.departamento === filtroDepto)
     }
 
-    if (filtroEstado !== "todos") {
-      resultado = resultado.filter((c) => c.estado === filtroEstado)
+    // Filtro por nivel
+    if (filtroNivel !== "todos") {
+      resultado = resultado.filter((c) => c.nivel === filtroNivel)
     }
 
     if (Object.keys(filtrosColumna).length > 0) {
@@ -129,7 +127,7 @@ export default function GestionCursosPage() {
     }
 
     setCursosFiltrados(resultado)
-  }, [busqueda, filtroDepto, filtroEstado, cursos, filtrosColumna])
+  }, [busqueda, filtroDepto, filtroNivel, cursos, filtrosColumna])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -160,7 +158,6 @@ export default function GestionCursosPage() {
       rut: "",
       correo: "",
       departamento: "",
-      estado: "Aprobado",
     })
     setIsDialogOpen(true)
   }
@@ -192,6 +189,7 @@ export default function GestionCursosPage() {
   }
 
   const departamentos = Array.from(new Set(cursos.map((c) => c.departamento)))
+  const niveles = Array.from(new Set(cursos.map((c) => c.nivel)))
 
   if (loading) return <div className="p-6">Cargando cursos...</div>
   if (error) return <div className="p-6 text-red-600">{error}</div>
@@ -203,11 +201,9 @@ export default function GestionCursosPage() {
       <div className="bg-white rounded-lg shadow p-6">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-800">Gestión de Cursos</h1>
-<Link href="/gestion-cursos/crear">
-          <Button className="bg-blue-600 hover:bg-blue-700">
-            Nuevo Curso
-          </Button>
-        </Link>
+          <Link href="/gestion-cursos/crear">
+            <Button className="bg-blue-600 hover:bg-blue-700">Nuevo Curso</Button>
+          </Link>
         </div>
 
         <div className="flex flex-col md:flex-row gap-4 mb-6">
@@ -231,7 +227,7 @@ export default function GestionCursosPage() {
               onClick={() => {
                 setBusqueda("")
                 setFiltroDepto("todos")
-                setFiltroEstado("todos")
+                setFiltroNivel("todos")
                 setFiltrosColumna({})
               }}
             >
@@ -258,15 +254,17 @@ export default function GestionCursosPage() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="flex items-center">
-                  <Filter className="mr-2 h-4 w-4" /> Estado
+                  <Filter className="mr-2 h-4 w-4" /> Nivel
                   <ChevronDown className="ml-2 h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => setFiltroEstado("todos")}>Todos</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setFiltroEstado("Aprobado")}>Aprobado</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setFiltroEstado("No aprobado")}>No aprobado</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setFiltroEstado("No inscrito")}>No inscrito</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setFiltroNivel("todos")}>Todos</DropdownMenuItem>
+                {niveles.map((n) => (
+                  <DropdownMenuItem key={n} onClick={() => setFiltroNivel(n)}>
+                    {n}
+                  </DropdownMenuItem>
+                ))}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -277,7 +275,7 @@ export default function GestionCursosPage() {
             <TableHeader className={cabecerasFijadas ? "sticky top-0 bg-white z-10" : ""}>
               <TableRow>
                 <TableHead className="border border-gray-300">Perfil curso</TableHead>
-                <TableHead className="border border-gray-300">Código</TableHead>
+                <TableHead className="border border-gray-300 w-15 min-w-[16rem] max-w-[20rem] text-center">Código</TableHead>
                 <TableHead className="border border-gray-300">Curso</TableHead>
                 <TableHead className="border border-gray-300">Descripción</TableHead>
                 <TableHead className="border border-gray-300">Nivel</TableHead>
@@ -286,7 +284,6 @@ export default function GestionCursosPage() {
                 <TableHead className="border border-gray-300">Tipo</TableHead>
                 <TableHead className="border border-gray-300">Año</TableHead>
                 <TableHead className="border border-gray-300">Departamento</TableHead>
-                <TableHead className="border border-gray-300">Estado</TableHead>
                 <TableHead className="border border-gray-300 text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
@@ -300,7 +297,12 @@ export default function GestionCursosPage() {
                         Ver curso
                       </Link>
                     </TableCell>
-                    <TableCell className="border border-gray-200">{c.codigo}</TableCell>
+                    <TableCell
+                      className="border border-gray-200 truncate text-center"
+                      style={{ width: "2rem", minWidth: "2rem", maxWidth: "2rem" }}
+                    >
+                      {c.codigo}
+                    </TableCell>
                     <TableCell className="border border-gray-200">{c.curso}</TableCell>
                     <TableCell className="border border-gray-200">{c.descripcion}</TableCell>
                     <TableCell className="border border-gray-200">{c.nivel}</TableCell>
@@ -309,32 +311,18 @@ export default function GestionCursosPage() {
                     <TableCell className="border border-gray-200">{c.tipo}</TableCell>
                     <TableCell className="border border-gray-200">{c.ano}</TableCell>
                     <TableCell className="border border-gray-200">{c.departamento}</TableCell>
-                    <TableCell className="border border-gray-200">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          c.estado === "Aprobado"
-                            ? "bg-green-100 text-green-800"
-                            : c.estado === "No aprobado"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {c.estado}
-                      </span>
-                    </TableCell>
                     <TableCell className="text-right border border-gray-200">
-                      <Button variant="ghost" size="sm" onClick={() => handleEditarCurso(c)}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleEliminarDialogo(c)}>
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
+  <Link href={`/gestion-cursos/editar/${c.id}`}>
+    <Button variant="ghost" size="sm">
+      <Edit className="h-4 w-4" />
+    </Button>
+  </Link>
                     </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={12} className="text-center py-4 border border-gray-200">
+                  <TableCell colSpan={11} className="text-center py-4 border border-gray-200">
                     No se encontraron cursos
                   </TableCell>
                 </TableRow>
