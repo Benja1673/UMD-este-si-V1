@@ -119,8 +119,24 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       categoriaId,
       departamentoId,
       docentesInscritos = [],
+      inscripciones = [],
     } = body;
 
+    // Traer las inscripciones actuales desde la BD
+    const inscripcionesActuales = await prisma.inscripcionCurso.findMany({
+      where: { cursoId: params.id },
+      select: { id: true, userId: true, estado: true },
+    });
+
+    // Determinar diferencias
+    const nuevos = docentesInscritos.filter(
+      (id: string) => !inscripcionesActuales.some((i) => i.userId === id)
+    );
+    const eliminados = inscripcionesActuales.filter(
+      (i) => !docentesInscritos.includes(i.userId)
+    );
+
+    // Actualizar curso (sin tocar las inscripciones)
     const cursoActualizado = await prisma.curso.update({
       where: { id: params.id },
       data: {
@@ -132,23 +148,53 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         ano: Number(ano),
         categoriaId,
         departamentoId,
-        inscripciones: {
-          deleteMany: {}, // eliminamos inscripciones previas
-          create: docentesInscritos.map((userId: number) => ({ userId })),
-        },
-      },
-      include: {
-        departamento: true,
-        inscripciones: { include: { usuario: true } },
       },
     });
 
-    return NextResponse.json(cursoActualizado);
+    // Eliminar los que ya no están
+    if (eliminados.length > 0) {
+      await prisma.inscripcionCurso.deleteMany({
+        where: { id: { in: eliminados.map((e) => e.id) } },
+      });
+    }
+
+    // Crear los nuevos
+    if (nuevos.length > 0) {
+      await prisma.inscripcionCurso.createMany({
+        data: nuevos.map((userId: string) => ({
+          userId,
+          cursoId: params.id,
+          estado: "INSCRITO", // default
+        })),
+      });
+    }
+
+    // Actualizar estados de los que se enviaron en el body (mantener cambios manuales)
+    for (const insc of inscripciones) {
+      await prisma.inscripcionCurso.updateMany({
+        where: { id: insc.id },
+        data: { estado: insc.estado },
+      });
+    }
+
+    // Retornar el curso con inscripciones actualizadas
+    const cursoFinal = await prisma.curso.findUnique({
+      where: { id: params.id },
+      include: {
+        departamento: true,
+        inscripciones: {
+          include: { usuario: true },
+        },
+      },
+    });
+
+    return NextResponse.json(cursoFinal);
   } catch (error) {
     console.error("Error al actualizar curso:", error);
     return NextResponse.json({ error: "Error al actualizar curso" }, { status: 500 });
   }
 }
+
 
 // ✅ Eliminar curso
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {

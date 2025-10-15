@@ -105,7 +105,7 @@ export async function POST(req: Request) {
   }
 }
 
-// ✅ Actualizar curso
+// ✅ Actualizar curso (mantiene estados de inscripción)
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   try {
     const body = await req.json();
@@ -121,26 +121,67 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       docentesInscritos = [],
     } = body;
 
-    const cursoActualizado = await prisma.curso.update({
-      where: { id: params.id },
-      data: {
-        nombre,
-        descripcion,
-        codigo,
-        nivel,
-        tipo,
-        ano: Number(ano),
-        categoriaId,
-        departamentoId,
-        inscripciones: {
-          deleteMany: {}, // eliminamos inscripciones previas
-          create: docentesInscritos.map((userId: number) => ({ userId })),
+    // 🔹 Obtenemos las inscripciones actuales del curso
+    const inscripcionesActuales = await prisma.inscripcionCurso.findMany({
+      where: { cursoId: params.id },
+    });
+
+    // 🔹 Determinar qué inscripciones se mantienen, agregan o eliminan
+    const nuevosUserIds = docentesInscritos.map((d: any) => d.userId);
+    const inscripcionesAEliminar = inscripcionesActuales.filter(
+      (i) => !nuevosUserIds.includes(i.userId)
+    );
+    const inscripcionesAActualizar = docentesInscritos.filter((d: any) =>
+      inscripcionesActuales.some((i) => i.userId === d.userId)
+    );
+    const inscripcionesANuevas = docentesInscritos.filter(
+      (d: any) => !inscripcionesActuales.some((i) => i.userId === d.userId)
+    );
+
+    // 🔹 Transacción para asegurar consistencia
+    const cursoActualizado = await prisma.$transaction(async (tx) => {
+      // 1️⃣ Eliminar inscripciones quitadas
+      for (const ins of inscripcionesAEliminar) {
+        await tx.inscripcionCurso.delete({ where: { id: ins.id } });
+      }
+
+      // 2️⃣ Actualizar inscripciones existentes (mantener estado)
+      for (const ins of inscripcionesAActualizar) {
+        await tx.inscripcionCurso.updateMany({
+          where: { cursoId: params.id, userId: ins.userId },
+          data: { estado: ins.estado ?? "INSCRITO" },
+        });
+      }
+
+      // 3️⃣ Crear nuevas inscripciones
+      for (const ins of inscripcionesANuevas) {
+        await tx.inscripcionCurso.create({
+          data: {
+            cursoId: params.id,
+            userId: ins.userId,
+            estado: ins.estado ?? "INSCRITO",
+          },
+        });
+      }
+
+      // 4️⃣ Actualizar datos generales del curso
+      return tx.curso.update({
+        where: { id: params.id },
+        data: {
+          nombre,
+          descripcion,
+          codigo,
+          nivel,
+          tipo,
+          ano: Number(ano),
+          categoriaId,
+          departamentoId,
         },
-      },
-      include: {
-        departamento: true,
-        inscripciones: { include: { usuario: true } },
-      },
+        include: {
+          departamento: true,
+          inscripciones: { include: { usuario: true } },
+        },
+      });
     });
 
     return NextResponse.json(cursoActualizado);
@@ -149,6 +190,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ error: "Error al actualizar curso" }, { status: 500 });
   }
 }
+
+
 
 // ✅ Eliminar curso
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {

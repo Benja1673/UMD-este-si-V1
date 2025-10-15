@@ -129,35 +129,24 @@ export default function EditarCursoPage() {
     router.push("/gestion-cursos")
   }
 
-const handleGuardarCambios = async () => {
-  try {
-    const inscripcionesActualizadas = docentesInscritos.map((d) => {
-      const insc = cursoData.inscripciones.find((i: any) => i.usuario.id === d.id);
-      return {
-        userId: d.id,
-        estado: insc?.estado || "INSCRITO",
-      };
-    });
-
-    const response = await fetch(`/api/cursos/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...cursoData,
-        docentesInscritos: inscripcionesActualizadas, // 👈 ahora envías objetos completos
-      }),
-    });
-
-    if (!response.ok) throw new Error("Error al guardar cambios");
-    alert("Curso actualizado correctamente");
-    router.push("/gestion-cursos");
-  } catch (error) {
-    console.error(error);
-    alert("No se pudo actualizar el curso");
+  const handleGuardarCambios = async () => {
+    try {
+      const response = await fetch(`/api/cursos/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...cursoData,
+          docentesInscritos: docentesInscritos.map((d) => d.id),
+        }),
+      })
+      if (!response.ok) throw new Error("Error al guardar cambios")
+      alert("Curso actualizado correctamente")
+      router.push("/gestion-cursos")
+    } catch (error) {
+      console.error(error)
+      alert("No se pudo actualizar el curso")
+    }
   }
-};
-
-
 
   if (loading || !cursoData) {
     return <div className="p-6 text-gray-500">Cargando datos del curso...</div>
