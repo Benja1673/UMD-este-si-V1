@@ -16,8 +16,10 @@ export default function CursoPage() {
       try {
         const res = await fetch(`/api/cursos/${params.id}`)
         if (!res.ok) throw new Error("Curso no encontrado")
+
         const data = await res.json()
 
+        // 🔹 Adaptar los datos del curso
         setCurso({
           id: data.id,
           codigo: data.codigo ?? "",
@@ -32,12 +34,14 @@ export default function CursoPage() {
           estado: data.activo ? "Activo" : "Inactivo",
         })
 
+        // 🔹 Adaptar los docentes con estado de inscripción
         const docentesAdaptados: Docente[] = data.inscripciones.map((i: any) => ({
           id: i.usuario.id,
-          nombre: `${i.usuario.name ?? ""} ${i.usuario.apellido ?? ""}`,
+          nombre: `${i.usuario.name ?? ""} ${i.usuario.apellido ?? ""}`.trim(),
           rut: i.usuario.rut ?? "",
           email: i.usuario.email ?? "",
           departamento: i.usuario.departamento?.nombre ?? "",
+          estadoInscripcion: i.estado ?? "Pendiente", // 👈 se agrega este campo
         }))
 
         setDocentes(docentesAdaptados)

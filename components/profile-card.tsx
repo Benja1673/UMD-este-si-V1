@@ -20,15 +20,15 @@ export type Curso = {
   id: string | number
   nivel: "Inicial" | "Intermedio" | "Avanzado"
   categoria: string
-    descripcion: string;
+  descripcion: string
   nombre: string
-  estado: "Aprobado" | "No Aprobado" | "No Inscrito"
+  estado: "Aprobado" | "Reprobado" | "Inscrito"
 }
 
 export type UserProfile = {
   id: string
   name: string
-  apellido:string
+  apellido: string
   rut: string
   carrera?: string
   email: string
@@ -45,37 +45,42 @@ export default function ProfileCard({ user, cursos }: ProfileCardProps) {
   const [cursosState, setCursosState] = useState<Curso[]>(cursos)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [cursoActual, setCursoActual] = useState<Curso | null>(null)
-  const [estadoSeleccionado, setEstadoSeleccionado] = useState<Curso["estado"]>("No Aprobado")
+  const [estadoSeleccionado, setEstadoSeleccionado] = useState<Curso["estado"]>("Inscrito")
 
-  const getCursoByNombre = (nombre: string): Curso | undefined => {
-    return cursosState.find((curso) => curso.nombre === nombre)
+  // 🎨 Colores según estado
+  const getColor = (estado: string) => {
+    switch (estado?.toUpperCase()) {
+      case "APROBADO":
+        return "bg-green-100 text-green-800"
+      case "REPROBADO":
+        return "bg-red-100 text-red-800"
+      case "INSCRITO":
+        return "bg-yellow-100 text-yellow-800"
+      default:
+        return "bg-gray-100 text-gray-800"
+    }
   }
 
+  // Renderizar chip de estado
   const renderEstadoCurso = (curso?: Curso) => {
     if (!curso)
       return <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">No disponible</span>
 
     return (
-      <span
-        className={`px-2 py-1 rounded text-xs font-medium ${
-          curso.estado === "Aprobado"
-            ? "bg-green-100 text-green-800"
-            : curso.estado === "No Aprobado"
-            ? "bg-red-100 text-red-800"
-            : "bg-gray-100 text-gray-800"
-        }`}
-      >
+      <span className={`px-2 py-1 rounded text-xs font-medium ${getColor(curso.estado)}`}>
         {curso.estado}
       </span>
     )
   }
 
+  // Abrir modal
   const handleEditarEstado = (curso: Curso) => {
     setCursoActual(curso)
     setEstadoSeleccionado(curso.estado)
     setIsDialogOpen(true)
   }
 
+  // Guardar nuevo estado
   const handleGuardarEstado = () => {
     if (cursoActual) {
       setCursosState(
@@ -89,6 +94,7 @@ export default function ProfileCard({ user, cursos }: ProfileCardProps) {
     <div className="space-y-6">
       {/* Header Perfil */}
       <div className="flex flex-col md:flex-row gap-6">
+        {/* Izquierda */}
         <div className="w-full md:w-1/3">
           <div className="bg-gray-100 rounded-lg p-6 flex flex-col items-center">
             <div className="h-32 w-32 rounded-full bg-gray-300 mb-4 overflow-hidden">
@@ -98,12 +104,15 @@ export default function ProfileCard({ user, cursos }: ProfileCardProps) {
                 className="h-full w-full object-cover"
               />
             </div>
-            <h2 className="text-lg font-medium text-center">{user.name}, {user.apellido}</h2>
+            <h2 className="text-lg font-medium text-center">
+              {user.name} {user.apellido}
+            </h2>
             <p className="text-gray-500 text-sm">{user.rut}</p>
             <p className="text-blue-600 font-medium mt-2">{user.carrera}</p>
           </div>
         </div>
 
+        {/* Derecha */}
         <div className="w-full md:w-2/3">
           <div className="bg-gray-100 rounded-lg p-6">
             <h3 className="text-lg font-medium mb-4">Información Personal</h3>
@@ -118,10 +127,12 @@ export default function ProfileCard({ user, cursos }: ProfileCardProps) {
                   <p>{user.rut}</p>
                 </div>
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-500">Carrera</label>
                 <p>{user.carrera}</p>
               </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-500">Email</label>
@@ -132,6 +143,7 @@ export default function ProfileCard({ user, cursos }: ProfileCardProps) {
                   <p>{user.telefono || "No registrado"}</p>
                 </div>
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-500">Dirección</label>
                 <p>{user.direccion || "No registrada"}</p>
@@ -141,52 +153,61 @@ export default function ProfileCard({ user, cursos }: ProfileCardProps) {
         </div>
       </div>
 
-      {/* Tabla cursos */}
+      {/* Tabla de inscripciones */}
       <div className="bg-white rounded-lg shadow p-6 mt-6">
-        <h2 className="text-xl font-bold mb-4 text-gray-800">Cursos Inscritos</h2>
-        {/* Reutilizas tu tabla de cursos acá */}
-        {/* ... misma tabla de tu código con cursosState en lugar de cursos ... */}
-        <div className="bg-white rounded-lg shadow p-6 mt-6">
-  <h2 className="text-xl font-bold mb-4 text-gray-800">Cursos</h2>
-  <Table>
-    <TableHeader>
-      <TableRow>
-        <TableHead>Nombre</TableHead>
-        <TableHead>Descripción</TableHead>
-        <TableHead>Categoría</TableHead>
-        <TableHead>Nivel</TableHead>
-        <TableHead>Estado</TableHead>
-        <TableHead>Acciones</TableHead>
-      </TableRow>
-    </TableHeader>
-    <TableBody>
-      {cursosState.map((curso) => (
-        <TableRow key={curso.id}>
-          <TableCell>{curso.nombre}</TableCell>
-          <TableCell>{curso.descripcion}</TableCell>
-          <TableCell>{curso.categoria}</TableCell>
-          <TableCell>{curso.nivel}</TableCell>
-          <TableCell>{renderEstadoCurso(curso)}</TableCell>
-          <TableCell>
-            <Button size="sm" variant="outline" onClick={() => handleEditarEstado(curso)}>
-              <Edit className="w-4 h-4 mr-1" /> Editar
-            </Button>
-          </TableCell>
-        </TableRow>
-      ))}
-    </TableBody>
-  </Table>
-</div>
+        <h2 className="text-xl font-bold mb-4 text-gray-800">Inscripciones del Docente</h2>
 
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Curso</TableHead>
+              <TableHead>Descripción</TableHead>
+              <TableHead>Categoría</TableHead>
+              <TableHead>Nivel</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead>Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+
+          <TableBody>
+            {cursosState.map((curso) => (
+              <TableRow key={curso.id}>
+                <TableCell>{curso.nombre}</TableCell>
+                <TableCell>{curso.descripcion}</TableCell>
+                <TableCell>{curso.categoria}</TableCell>
+                <TableCell>{curso.nivel}</TableCell>
+
+                <TableCell>
+                  <span
+                    className={`px-3 py-1 rounded-full text-sm font-medium ${getColor(
+                      curso.estado
+                    )}`}
+                  >
+                    {curso.estado}
+                  </span>
+                </TableCell>
+
+                <TableCell>
+                  <Button size="sm" variant="outline" onClick={() => handleEditarEstado(curso)}>
+                    <Edit className="w-4 h-4 mr-1" /> Editar
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
 
-      {/* Diálogo edición curso */}
+      {/* Modal para editar estado */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Editar Estado del Curso</DialogTitle>
-            <DialogDescription>Actualiza el estado del curso {cursoActual?.nombre}.</DialogDescription>
+            <DialogTitle>Editar Estado de Inscripción</DialogTitle>
+            <DialogDescription>
+              Actualiza el estado del curso <b>{cursoActual?.nombre}</b>.
+            </DialogDescription>
           </DialogHeader>
+
           <div className="grid gap-4 py-4">
             <div className="flex flex-col gap-2">
               <Label htmlFor="estado">Estado</Label>
@@ -196,17 +217,18 @@ export default function ProfileCard({ user, cursos }: ProfileCardProps) {
                   setEstadoSeleccionado(value as Curso["estado"])
                 }
               >
-                <SelectTrigger id="estado">
-                  <SelectValue placeholder="Selecciona un estado" />
+                <SelectTrigger className={`w-40 ${getColor(estadoSeleccionado)} text-center`}>
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Aprobado">Aprobado</SelectItem>
-                  <SelectItem value="No Aprobado">No Aprobado</SelectItem>
-                  <SelectItem value="No Inscrito">No Inscrito</SelectItem>
+                  <SelectItem value="Reprobado">Reprobado</SelectItem>
+                  <SelectItem value="Inscrito">Inscrito</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               Cancelar
