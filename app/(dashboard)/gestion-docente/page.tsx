@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import {
   Table,
@@ -27,10 +27,10 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-import { ChevronDown, Filter, Edit, Trash2, Search, Plus, X, Pin as PinIcon } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { ChevronDown, Filter, Edit, Trash2, Search, Plus, X, Pin as PinIcon, Loader2 } from "lucide-react"
 
-// Componente BreadcrumbNav (ajusta según tu implementación)
+// Componente BreadcrumbNav
 function BreadcrumbNav({ current }: { current: string }) {
   return (
     <div className="text-sm text-gray-600 mb-4">
@@ -68,20 +68,19 @@ type User = {
 }
 
 export default function Page() {
+  const { toast } = useToast()
   const [users, setUsers] = useState<User[]>([])
   const [usersFiltrados, setUsersFiltrados] = useState<User[]>([])
   const [busqueda, setBusqueda] = useState("")
   const [filtroDepto, setFiltroDepto] = useState("todos")
   const [filtroEstado, setFiltroEstado] = useState("todos")
   const [filtrosColumna, setFiltrosColumna] = useState<Record<string, string[]>>({})
-  const [columnaFiltroActiva, setColumnaFiltroActiva] = useState<string | null>(null)
   const [cabecerasFijadas, setCabecerasFijadas] = useState(false)
-  const filtroRef = useRef<HTMLDivElement>(null)
-  const [posicionFiltro, setPosicionFiltro] = useState({ top: 0, left: 0 })
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [userActual, setUserActual] = useState<User | null>(null)
-  const [formData, setFormData] = useState<User>({
+  const [isLoading, setIsLoading] = useState(false)
+  const [formData, setFormData] = useState({
     id: "",
     nombre: "",
     apellido: "",
@@ -89,31 +88,61 @@ export default function Page() {
     email: "",
     departamento: "",
     especialidad: "",
-    estado: "Activo",
-    cursos: {
-      modeloEducativo: "No Inscrito",
-      perspectivaGenero: "No Inscrito",
-      neurodiversidadInclusion: "No Inscrito",
-      metodologiasActivas: "No Inscrito",
-      evaluacion: "No Inscrito",
-      planificacionEnsenanza: "No Inscrito",
-      dedu: "No Inscrito",
-      didu: "No Inscrito",
-      concursosInvestigacion: "No Inscrito",
-      aS: "No Inscrito",
-      stem: "No Inscrito",
-      coil: "No Inscrito",
-      didactica: "No Inscrito",
-    },
   })
 
-  // Fetch de usuarios desde la base de datos
-  useEffect(() => {
-    async function fetchUsers() {
+  // Función para mapear estado de BD a estado UI
+  const mapearEstadoCurso = (estadoBD: string): string => {
+    switch (estadoBD) {
+      case "APROBADO":
+        return "Aprobado"
+      case "REPROBADO":
+        return "No Aprobado"
+      case "INSCRITO":
+        return "En Curso"
+      case "NO_INSCRITO":
+        return "No Inscrito"
+      default:
+        return "No Inscrito"
+    }
+  }
+
+  // Función para mapear nombre de curso a clave del objeto
+  const mapearNombreCurso = (nombreCurso: string): keyof Cursos | null => {
+    const nombre = nombreCurso.toLowerCase().trim()
+    
+    if (nombre.includes("modelo educativo")) return "modeloEducativo"
+    if (nombre.includes("perspectiva") && nombre.includes("género")) return "perspectivaGenero"
+    if (nombre.includes("perspectiva") && nombre.includes("genero")) return "perspectivaGenero"
+    if (nombre.includes("neurodiversidad") || nombre.includes("inclusión") || nombre.includes("inclusion")) return "neurodiversidadInclusion"
+    if (nombre.includes("metodologías activas") || nombre.includes("metodologias activas")) return "metodologiasActivas"
+    if (nombre.includes("evaluación") || nombre.includes("evaluacion")) return "evaluacion"
+    if (nombre.includes("planificación") || nombre.includes("planificacion")) return "planificacionEnsenanza"
+    if (nombre === "dedu" || nombre.includes("dedu")) return "dedu"
+    if (nombre === "didu" || nombre.includes("didu")) return "didu"
+    if (nombre.includes("concurso") || nombre.includes("investigación") || nombre.includes("investigacion")) return "concursosInvestigacion"
+    if (nombre.includes("a+s") || nombre === "a+s" || nombre.includes("aprendizaje") && nombre.includes("servicio")) return "aS"
+    if (nombre === "stem" || nombre.includes("stem")) return "stem"
+    if (nombre === "coil" || nombre.includes("coil")) return "coil"
+    if (nombre.includes("didáctica") || nombre.includes("didactica")) return "didactica"
+    
+    return null
+  }
+
+  // Fetch inicial de usuarios
+  const fetchUsers = async () => {
+    try {
+      console.log("🔄 Fetching usuarios...")
       const res = await fetch("/api/users")
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`)
+      }
+      
       const dataRaw = await res.json()
+      console.log(`📥 Datos recibidos: ${dataRaw.length} docentes`)
 
       const data: User[] = dataRaw.map((docente: any) => {
+        // Inicializar todos los cursos en "No Inscrito"
         const cursos: Cursos = {
           modeloEducativo: "No Inscrito",
           perspectivaGenero: "No Inscrito",
@@ -130,51 +159,31 @@ export default function Page() {
           didactica: "No Inscrito",
         }
 
-        docente.inscripciones.forEach((insc: any) => {
-          const estadoCurso = insc.nota && insc.nota >= 4 ? "Aprobado" : "No Aprobado"
+        // Debug: Log inscripciones del docente
+        console.log(`👤 ${docente.name} ${docente.apellido}: ${docente.inscripciones?.length || 0} inscripciones`)
 
-          switch (insc.curso.nombre) {
-            case "Modelo Educativo":
-              cursos.modeloEducativo = estadoCurso
-              break
-            case "Perspectiva de Género":
-              cursos.perspectivaGenero = estadoCurso
-              break
-            case "Neurodiversidad e Inclusión":
-              cursos.neurodiversidadInclusion = estadoCurso
-              break
-            case "Metodologías Activas":
-              cursos.metodologiasActivas = estadoCurso
-              break
-            case "Evaluación":
-              cursos.evaluacion = estadoCurso
-              break
-            case "Planificación de Enseñanza":
-              cursos.planificacionEnsenanza = estadoCurso
-              break
-            case "DEDU":
-              cursos.dedu = estadoCurso
-              break
-            case "DIDU":
-              cursos.didu = estadoCurso
-              break
-            case "Concursos Investigación":
-              cursos.concursosInvestigacion = estadoCurso
-              break
-            case "A+S":
-              cursos.aS = estadoCurso
-              break
-            case "STEM":
-              cursos.stem = estadoCurso
-              break
-            case "COIL":
-              cursos.coil = estadoCurso
-              break
-            case "Didáctica":
-              cursos.didactica = estadoCurso
-              break
-          }
-        })
+        // Procesar inscripciones
+        if (docente.inscripciones && Array.isArray(docente.inscripciones)) {
+          docente.inscripciones.forEach((insc: any) => {
+            if (!insc.curso || !insc.curso.nombre) {
+              console.warn("⚠️ Inscripción sin curso:", insc)
+              return
+            }
+
+            const nombreCurso = insc.curso.nombre
+            const estadoBD = insc.estado || "NO_INSCRITO"
+            const claveCurso = mapearNombreCurso(nombreCurso)
+            const estadoUI = mapearEstadoCurso(estadoBD)
+
+            console.log(`  📚 ${nombreCurso} → ${claveCurso} → ${estadoUI}`)
+
+            if (claveCurso) {
+              cursos[claveCurso] = estadoUI
+            } else {
+              console.warn(`⚠️ No se pudo mapear el curso: "${nombreCurso}"`)
+            }
+          })
+        }
 
         return {
           id: docente.id,
@@ -189,10 +198,20 @@ export default function Page() {
         }
       })
 
+      console.log("✅ Usuarios procesados:", data.length)
       setUsers(data)
       setUsersFiltrados(data)
+    } catch (error: any) {
+      console.error("❌ Error al cargar docentes:", error)
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los docentes: " + error.message,
+        variant: "destructive",
+      })
     }
+  }
 
+  useEffect(() => {
     fetchUsers()
   }, [])
 
@@ -200,7 +219,6 @@ export default function Page() {
   useEffect(() => {
     let resultado = users
 
-    // Filtro de búsqueda
     if (busqueda) {
       resultado = resultado.filter((u) =>
         `${u.nombre} ${u.apellido} ${u.rut} ${u.email}`
@@ -209,12 +227,10 @@ export default function Page() {
       )
     }
 
-    // Filtro de departamento
     if (filtroDepto !== "todos") {
       resultado = resultado.filter((u) => u.departamento === filtroDepto)
     }
 
-    // Filtro de estado
     if (filtroEstado !== "todos") {
       resultado = resultado.filter((u) => u.estado === filtroEstado)
     }
@@ -222,14 +238,12 @@ export default function Page() {
     setUsersFiltrados(resultado)
   }, [busqueda, filtroDepto, filtroEstado, users])
 
-  const departamentos = Array.from(new Set(users.map((u) => u.departamento)))
+  const departamentos = Array.from(new Set(users.map((u) => u.departamento).filter(Boolean)))
 
   const tieneFiltroPorColumna = (col: string) => filtrosColumna[col]?.length > 0
 
   const handleClickColumna = (col: string, e: React.MouseEvent) => {
-    const rect = (e.target as HTMLElement).getBoundingClientRect()
-    setPosicionFiltro({ top: rect.bottom + window.scrollY, left: rect.left + window.scrollX })
-    setColumnaFiltroActiva(col)
+    // Lógica de filtros por columna (implementar después si es necesario)
   }
 
   const handleNuevoDocente = () => {
@@ -242,29 +256,21 @@ export default function Page() {
       email: "",
       departamento: "",
       especialidad: "",
-      estado: "Activo",
-      cursos: {
-        modeloEducativo: "No Inscrito",
-        perspectivaGenero: "No Inscrito",
-        neurodiversidadInclusion: "No Inscrito",
-        metodologiasActivas: "No Inscrito",
-        evaluacion: "No Inscrito",
-        planificacionEnsenanza: "No Inscrito",
-        dedu: "No Inscrito",
-        didu: "No Inscrito",
-        concursosInvestigacion: "No Inscrito",
-        aS: "No Inscrito",
-        stem: "No Inscrito",
-        coil: "No Inscrito",
-        didactica: "No Inscrito",
-      },
     })
     setIsDialogOpen(true)
   }
 
   const handleEditarDocente = (user: User) => {
     setUserActual(user)
-    setFormData(user)
+    setFormData({
+      id: user.id,
+      nombre: user.nombre,
+      apellido: user.apellido,
+      rut: user.rut,
+      email: user.email,
+      departamento: user.departamento,
+      especialidad: user.especialidad || "",
+    })
     setIsDialogOpen(true)
   }
 
@@ -278,12 +284,98 @@ export default function Page() {
     setFormData({ ...formData, [name]: value })
   }
 
-  const handleGuardarCurso = () => {
-    setIsDialogOpen(false)
+  const handleGuardarDocente = async () => {
+    // Validación de campos obligatorios
+    if (!formData.nombre || !formData.apellido || !formData.rut || !formData.email) {
+      toast({
+        title: "Error",
+        description: "Por favor complete todos los campos obligatorios",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      if (userActual) {
+        // Editar docente existente
+        const res = await fetch("/api/users", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        })
+
+        if (!res.ok) {
+          const error = await res.json()
+          throw new Error(error.error || "Error al actualizar")
+        }
+
+        toast({
+          title: "Éxito",
+          description: "Docente actualizado correctamente",
+        })
+      } else {
+        // Crear nuevo docente
+        const res = await fetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        })
+
+        if (!res.ok) {
+          const error = await res.json()
+          throw new Error(error.error || "Error al crear")
+        }
+
+        toast({
+          title: "Éxito",
+          description: "Docente creado correctamente",
+        })
+      }
+
+      setIsDialogOpen(false)
+      await fetchUsers() // Recargar la tabla
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleEliminarUser = () => {
-    setIsDeleteDialogOpen(false)
+  const handleEliminarDocente = async () => {
+    if (!userActual) return
+
+    setIsLoading(true)
+    try {
+      const res = await fetch(`/api/users?id=${userActual.id}`, {
+        method: "DELETE",
+      })
+
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || "Error al eliminar")
+      }
+
+      toast({
+        title: "Éxito",
+        description: "Docente eliminado correctamente",
+      })
+
+      setIsDeleteDialogOpen(false)
+      await fetchUsers() // Recargar la tabla
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -332,74 +424,44 @@ export default function Page() {
               <X className="mr-2 h-4 w-4" />
               Limpiar filtros
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="flex items-center">
-                  <Filter className="mr-2 h-4 w-4" />
-                  Departamento
-                  <ChevronDown className="ml-2 h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => setFiltroDepto("todos")}>Todos</DropdownMenuItem>
-                {departamentos.map((depto) => (
-                  <DropdownMenuItem key={depto} onClick={() => setFiltroDepto(depto)}>
-                    {depto}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {departamentos.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="flex items-center">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Departamento
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={() => setFiltroDepto("todos")}>Todos</DropdownMenuItem>
+                  {departamentos.map((depto) => (
+                    <DropdownMenuItem key={depto} onClick={() => setFiltroDepto(depto)}>
+                      {depto}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
 
-        {/* Tabla de docentes con cursos */}
+        {/* Tabla de docentes */}
         <div className={`border rounded-md ${cabecerasFijadas ? "max-h-[70vh] overflow-y-auto" : "overflow-x-auto"}`}>
           <Table>
             <TableHeader className={cabecerasFijadas ? "sticky top-0 bg-white z-10" : ""}>
               <TableRow>
-                <TableHead
-                  rowSpan={3}
-                  className={`cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("nombre") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("nombre", e)}
-                >
+                <TableHead rowSpan={3} className="cursor-pointer border border-gray-300">
                   Nombre
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("nombre") && <Filter className="h-3 w-3 inline ml-1" />}
                 </TableHead>
-                <TableHead
-                  rowSpan={3}
-                  className={`cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("rut") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("rut", e)}
-                >
+                <TableHead rowSpan={3} className="cursor-pointer border border-gray-300">
                   RUT
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("rut") && <Filter className="h-3 w-3 inline ml-1" />}
                 </TableHead>
-                <TableHead
-                  rowSpan={3}
-                  className={`cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("email") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("email", e)}
-                >
+                <TableHead rowSpan={3} className="cursor-pointer border border-gray-300">
                   Email
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("email") && <Filter className="h-3 w-3 inline ml-1" />}
                 </TableHead>
-                <TableHead
-                  rowSpan={3}
-                  className={`cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("departamento") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("departamento", e)}
-                >
+                <TableHead rowSpan={3} className="cursor-pointer border border-gray-300">
                   Departamento
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("departamento") && <Filter className="h-3 w-3 inline ml-1" />}
                 </TableHead>
                 <TableHead rowSpan={3} className="text-center border border-gray-300">
                   Perfil
@@ -413,27 +475,17 @@ export default function Page() {
                 <TableHead colSpan={3} className="text-center border border-gray-300">
                   AVANZADO
                 </TableHead>
-                <TableHead
-                  rowSpan={3}
-                  className={`text-center cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("nivel") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("nivel", e)}
-                >
+                <TableHead rowSpan={3} className="text-center border border-gray-300">
                   Nivel
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("nivel") && <Filter className="h-3 w-3 inline ml-1" />}
                 </TableHead>
                 <TableHead rowSpan={3} className="text-right border border-gray-300">
                   Acciones
                 </TableHead>
               </TableRow>
               <TableRow>
-                {/* Nivel Inicial - Categorías */}
                 <TableHead colSpan={1} className="text-center border border-gray-300">
                   MODELO EDUCATIVO
                 </TableHead>
-                {/* Nivel Intermedio - Categorías */}
                 <TableHead colSpan={2} className="text-center border border-gray-300">
                   AMBIENTES PROPICIOS
                 </TableHead>
@@ -446,7 +498,6 @@ export default function Page() {
                 <TableHead colSpan={4} className="text-center border border-gray-300">
                   REFLEXIÓN DOCENTE
                 </TableHead>
-                {/* Nivel Avanzado - Categorías */}
                 <TableHead colSpan={2} className="text-center border border-gray-300">
                   METODOLOGÍAS VINCULADAS
                 </TableHead>
@@ -455,146 +506,19 @@ export default function Page() {
                 </TableHead>
               </TableRow>
               <TableRow>
-                {/* Nivel Inicial */}
-                <TableHead
-                  className={`text-center cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("modeloEducativo") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("modeloEducativo", e)}
-                >
-                  Modelo Educativo
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("modeloEducativo") && <Filter className="h-3 w-3 inline ml-1" />}
-                </TableHead>
-                {/* Nivel Intermedio - Ambientes propicios */}
-                <TableHead
-                  className={`text-center cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("perspectivaGenero") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("perspectivaGenero", e)}
-                >
-                  Perspectiva de género
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("perspectivaGenero") && <Filter className="h-3 w-3 inline ml-1" />}
-                </TableHead>
-                <TableHead
-                  className={`text-center cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("neurodiversidadInclusion") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("neurodiversidadInclusion", e)}
-                >
-                  Neurodiversidad e Inclusión
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("neurodiversidadInclusion") && <Filter className="h-3 w-3 inline ml-1" />}
-                </TableHead>
-                {/* Nivel Intermedio - Enseñanza en aula */}
-                <TableHead
-                  className={`text-center cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("metodologiasActivas") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("metodologiasActivas", e)}
-                >
-                  Metodologías Activas
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("metodologiasActivas") && <Filter className="h-3 w-3 inline ml-1" />}
-                </TableHead>
-                <TableHead
-                  className={`text-center cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("evaluacion") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("evaluacion", e)}
-                >
-                  Evaluación
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("evaluacion") && <Filter className="h-3 w-3 inline ml-1" />}
-                </TableHead>
-                {/* Nivel Intermedio - Planificación */}
-                <TableHead
-                  className={`text-center cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("planificacionEnsenanza") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("planificacionEnsenanza", e)}
-                >
-                  Planificación de la enseñanza
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("planificacionEnsenanza") && <Filter className="h-3 w-3 inline ml-1" />}
-                </TableHead>
-                {/* Nivel Intermedio - Reflexión */}
-                <TableHead
-                  className={`text-center cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("dedu") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("dedu", e)}
-                >
-                  DEDU
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("dedu") && <Filter className="h-3 w-3 inline ml-1" />}
-                </TableHead>
-                <TableHead
-                  className={`text-center cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("didu") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("didu", e)}
-                >
-                  DIDU
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("didu") && <Filter className="h-3 w-3 inline ml-1" />}
-                </TableHead>
-                <TableHead
-                  className={`text-center cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("concursosInvestigacion") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("concursosInvestigacion", e)}
-                >
-                  Concursos Investigación
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("concursosInvestigacion") && <Filter className="h-3 w-3 inline ml-1" />}
-                </TableHead>
-                <TableHead className="text-center border border-gray-300">
-                  Participación Docente
-                </TableHead>
-                {/* Nivel Avanzado - Metodologías vinculadas */}
-                <TableHead
-                  className={`text-center cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("aS") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("aS", e)}
-                >
-                  A+S
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("aS") && <Filter className="h-3 w-3 inline ml-1" />}
-                </TableHead>
-                <TableHead
-                  className={`text-center cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("stem") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("stem", e)}
-                >
-                  STEM
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("stem") && <Filter className="h-3 w-3 inline ml-1" />}
-                </TableHead>
-                <TableHead
-                  className={`text-center cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("coil") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("coil", e)}
-                >
-                  COIL
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("coil") && <Filter className="h-3 w-3 inline ml-1" />}
-                </TableHead>
-                {/* Nivel Avanzado - Didáctica */}
-                <TableHead
-                  className={`text-center cursor-pointer border border-gray-300 ${
-                    tieneFiltroPorColumna("didactica") ? "bg-gray-200" : "hover:bg-gray-100"
-                  }`}
-                  onClick={(e) => handleClickColumna("didactica", e)}
-                >
-                  DIDÁCTICA
-                  <ChevronDown className="h-4 w-4 inline ml-1" />
-                  {tieneFiltroPorColumna("didactica") && <Filter className="h-3 w-3 inline ml-1" />}
-                </TableHead>
+                <TableHead className="text-center border border-gray-300">Modelo Educativo</TableHead>
+                <TableHead className="text-center border border-gray-300">Perspectiva de género</TableHead>
+                <TableHead className="text-center border border-gray-300">Neurodiversidad e Inclusión</TableHead>
+                <TableHead className="text-center border border-gray-300">Metodologías Activas</TableHead>
+                <TableHead className="text-center border border-gray-300">Evaluación</TableHead>
+                <TableHead className="text-center border border-gray-300">Planificación</TableHead>
+                <TableHead className="text-center border border-gray-300">DEDU</TableHead>
+                <TableHead className="text-center border border-gray-300">DIDU</TableHead>
+                <TableHead className="text-center border border-gray-300">Concursos</TableHead>
+                <TableHead className="text-center border border-gray-300">A+S</TableHead>
+                <TableHead className="text-center border border-gray-300">STEM</TableHead>
+                <TableHead className="text-center border border-gray-300">COIL</TableHead>
+                <TableHead className="text-center border border-gray-300">DIDÁCTICA</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -604,225 +528,43 @@ export default function Page() {
                     <TableCell className="border border-gray-200">{`${docente.nombre} ${docente.apellido}`}</TableCell>
                     <TableCell className="border border-gray-200">{docente.rut}</TableCell>
                     <TableCell className="border border-gray-200">{docente.email}</TableCell>
-                    <TableCell className="border border-gray-200">{docente.departamento}</TableCell>
+                    <TableCell className="border border-gray-200">{docente.departamento || "-"}</TableCell>
                     <TableCell className="border border-gray-200 text-center">
-                      <Link
-                        href={`/perfil-docente/${docente.id}`}
-                        className="text-blue-600 hover:text-blue-800 underline"
-                      >
+                      <Link href={`/perfil-docente/${docente.id}`} className="text-blue-600 hover:text-blue-800 underline">
                         Ver perfil
                       </Link>
                     </TableCell>
 
-                    {/* Nivel Inicial */}
-                    <TableCell className="border border-gray-200 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          docente.cursos.modeloEducativo === "Aprobado"
-                            ? "bg-green-100 text-green-800"
-                            : docente.cursos.modeloEducativo === "No Aprobado"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {docente.cursos.modeloEducativo}
-                      </span>
-                    </TableCell>
+                    {/* Cursos */}
+                    {Object.values(docente.cursos).map((curso, idx) => (
+                      <TableCell key={idx} className="border border-gray-200 text-center">
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-medium ${
+                            curso === "Aprobado"
+                              ? "bg-green-100 text-green-800"
+                              : curso === "No Aprobado"
+                              ? "bg-red-100 text-red-800"
+                              : curso === "En Curso"
+                              ? "bg-yellow-100 text-yellow-800"
+                              : "bg-gray-100 text-gray-800"
+                          }`}
+                        >
+                          {curso}
+                        </span>
+                      </TableCell>
+                    ))}
 
-                    {/* Nivel Intermedio - Ambientes propicios */}
-                    <TableCell className="border border-gray-200 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          docente.cursos.perspectivaGenero === "Aprobado"
-                            ? "bg-green-100 text-green-800"
-                            : docente.cursos.perspectivaGenero === "No Aprobado"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {docente.cursos.perspectivaGenero}
-                      </span>
-                    </TableCell>
-                    <TableCell className="border border-gray-200 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          docente.cursos.neurodiversidadInclusion === "Aprobado"
-                            ? "bg-green-100 text-green-800"
-                            : docente.cursos.neurodiversidadInclusion === "No Aprobado"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {docente.cursos.neurodiversidadInclusion}
-                      </span>
-                    </TableCell>
-
-                    {/* Nivel Intermedio - Enseñanza en aula */}
-                    <TableCell className="border border-gray-200 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          docente.cursos.metodologiasActivas === "Aprobado"
-                            ? "bg-green-100 text-green-800"
-                            : docente.cursos.metodologiasActivas === "No Aprobado"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {docente.cursos.metodologiasActivas}
-                      </span>
-                    </TableCell>
-                    <TableCell className="border border-gray-200 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          docente.cursos.evaluacion === "Aprobado"
-                            ? "bg-green-100 text-green-800"
-                            : docente.cursos.evaluacion === "No Aprobado"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {docente.cursos.evaluacion}
-                      </span>
-                    </TableCell>
-
-                    {/* Nivel Intermedio - Planificación */}
-                    <TableCell className="border border-gray-200 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          docente.cursos.planificacionEnsenanza === "Aprobado"
-                            ? "bg-green-100 text-green-800"
-                            : docente.cursos.planificacionEnsenanza === "No Aprobado"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {docente.cursos.planificacionEnsenanza}
-                      </span>
-                    </TableCell>
-
-                    {/* Nivel Intermedio - Reflexión */}
-                    <TableCell className="border border-gray-200 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          docente.cursos.dedu === "Aprobado"
-                            ? "bg-green-100 text-green-800"
-                            : docente.cursos.dedu === "No Aprobado"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {docente.cursos.dedu}
-                      </span>
-                    </TableCell>
-                    <TableCell className="border border-gray-200 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          docente.cursos.didu === "Aprobado"
-                            ? "bg-green-100 text-green-800"
-                            : docente.cursos.didu === "No Aprobado"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {docente.cursos.didu}
-                      </span>
-                    </TableCell>
-                    <TableCell className="border border-gray-200 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          docente.cursos.concursosInvestigacion === "Aprobado"
-                            ? "bg-green-100 text-green-800"
-                            : docente.cursos.concursosInvestigacion === "No Aprobado"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {docente.cursos.concursosInvestigacion}
-                      </span>
-                    </TableCell>
-                    
-                    {/* Participación Docente - placeholder */}
-                    <TableCell className="border border-gray-200 text-center">
-                      <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                        No Inscrito
-                      </span>
-                    </TableCell>
-
-                    {/* Nivel Avanzado - Metodologías vinculadas */}
-                    <TableCell className="border border-gray-200 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          docente.cursos.aS === "Aprobado"
-                            ? "bg-green-100 text-green-800"
-                            : docente.cursos.aS === "No Aprobado"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {docente.cursos.aS}
-                      </span>
-                    </TableCell>
-                    <TableCell className="border border-gray-200 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          docente.cursos.stem === "Aprobado"
-                            ? "bg-green-100 text-green-800"
-                            : docente.cursos.stem === "No Aprobado"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {docente.cursos.stem}
-                      </span>
-                    </TableCell>
-                    <TableCell className="border border-gray-200 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          docente.cursos.coil === "Aprobado"
-                            ? "bg-green-100 text-green-800"
-                            : docente.cursos.coil === "No Aprobado"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {docente.cursos.coil}
-                      </span>
-                    </TableCell>
-
-                    {/* Nivel Avanzado - Didáctica */}
-                    <TableCell className="border border-gray-200 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          docente.cursos.didactica === "Aprobado"
-                            ? "bg-green-100 text-green-800"
-                            : docente.cursos.didactica === "No Aprobado"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {docente.cursos.didactica}
-                      </span>
-                    </TableCell>
-
-                    {/* Cálculo del Nivel */}
+                    {/* Nivel */}
                     <TableCell className="border border-gray-200 text-center">
                       {(() => {
                         const c = docente.cursos
                         const tieneNivelInicial = c.modeloEducativo === "Aprobado"
-                        const tieneAmbientesPropicios =
-                          c.perspectivaGenero === "Aprobado" || c.neurodiversidadInclusion === "Aprobado"
+                        const tieneAmbientesPropicios = c.perspectivaGenero === "Aprobado" || c.neurodiversidadInclusion === "Aprobado"
                         const tieneEnsenanzaAula = c.metodologiasActivas === "Aprobado" || c.evaluacion === "Aprobado"
                         const tienePlanificacion = c.planificacionEnsenanza === "Aprobado"
-                        const tieneReflexion =
-                          c.dedu === "Aprobado" || c.didu === "Aprobado" || c.concursosInvestigacion === "Aprobado"
-                        const tieneNivelIntermedio =
-                          tieneNivelInicial &&
-                          tieneAmbientesPropicios &&
-                          tieneEnsenanzaAula &&
-                          tienePlanificacion &&
-                          tieneReflexion
-                        const tieneMetodologiasVinculadas =
-                          c.aS === "Aprobado" || c.stem === "Aprobado" || c.coil === "Aprobado"
+                        const tieneReflexion = c.dedu === "Aprobado" || c.didu === "Aprobado" || c.concursosInvestigacion === "Aprobado" || c.aS === "Aprobado"
+                        const tieneNivelIntermedio = tieneNivelInicial && tieneAmbientesPropicios && tieneEnsenanzaAula && tienePlanificacion && tieneReflexion
+                        const tieneMetodologiasVinculadas = c.stem === "Aprobado" || c.coil === "Aprobado"
                         const tieneDidactica = c.didactica === "Aprobado"
                         const tieneNivelAvanzado = tieneNivelIntermedio && tieneMetodologiasVinculadas && tieneDidactica
 
@@ -857,7 +599,10 @@ export default function Page() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={20} className="text-center py-4 border border-gray-200">
-                    No se encontraron docentes con los filtros aplicados
+                    {busqueda || filtroDepto !== "todos" ? 
+                      "No se encontraron docentes con los filtros aplicados" :
+                      "No hay docentes registrados"
+                    }
                   </TableCell>
                 </TableRow>
               )}
@@ -866,58 +611,113 @@ export default function Page() {
         </div>
       </div>
 
-      {/* Dialogo de Edición/Creación */}
+      {/* Dialog de Crear/Editar Docente */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{userActual ? "Editar Docente" : "Nuevo Docente"}</DialogTitle>
-            <DialogDescription>Complete los datos del docente</DialogDescription>
+            <DialogDescription>
+              Complete los datos del docente. Los campos marcados con * son obligatorios.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="nombre">Nombre</Label>
-              <Input id="nombre" name="nombre" value={formData.nombre} onChange={handleFormChange} />
+              <Label htmlFor="nombre">Nombre *</Label>
+              <Input
+                id="nombre"
+                name="nombre"
+                value={formData.nombre}
+                onChange={handleFormChange}
+                placeholder="Juan"
+                required
+              />
             </div>
             <div>
-              <Label htmlFor="apellido">Apellido</Label>
-              <Input id="apellido" name="apellido" value={formData.apellido} onChange={handleFormChange} />
+              <Label htmlFor="apellido">Apellido *</Label>
+              <Input
+                id="apellido"
+                name="apellido"
+                value={formData.apellido}
+                onChange={handleFormChange}
+                placeholder="Pérez"
+                required
+              />
             </div>
             <div>
-              <Label htmlFor="rut">RUT</Label>
-              <Input id="rut" name="rut" value={formData.rut} onChange={handleFormChange} />
+              <Label htmlFor="rut">RUT *</Label>
+              <Input
+                id="rut"
+                name="rut"
+                value={formData.rut}
+                onChange={handleFormChange}
+                placeholder="12.345.678-9"
+                required
+              />
             </div>
             <div>
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" name="email" value={formData.email} onChange={handleFormChange} />
+              <Label htmlFor="email">Email *</Label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                value={formData.email}
+                onChange={handleFormChange}
+                placeholder="juan.perez@universidad.cl"
+                required
+              />
             </div>
             <div>
               <Label htmlFor="departamento">Departamento</Label>
-              <Input id="departamento" name="departamento" value={formData.departamento} onChange={handleFormChange} />
+              <Input
+                id="departamento"
+                name="departamento"
+                value={formData.departamento}
+                onChange={handleFormChange}
+                placeholder="Ingeniería"
+              />
+            </div>
+            <div>
+              <Label htmlFor="especialidad">Especialidad</Label>
+              <Input
+                id="especialidad"
+                name="especialidad"
+                value={formData.especialidad}
+                onChange={handleFormChange}
+                placeholder="Matemáticas"
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isLoading}>
               Cancelar
             </Button>
-            <Button onClick={handleGuardarCurso}>Guardar</Button>
+            <Button onClick={handleGuardarDocente} disabled={isLoading}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {userActual ? "Actualizar" : "Crear"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialogo de Eliminación */}
+      {/* Dialog de Confirmación de Eliminación */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Confirmar eliminación</DialogTitle>
             <DialogDescription>
-              ¿Está seguro que desea eliminar al docente {userActual?.nombre} {userActual?.apellido}?
+              ¿Está seguro que desea eliminar al docente{" "}
+              <strong>
+                {userActual?.nombre} {userActual?.apellido}
+              </strong>
+              ? Esta acción no se puede deshacer.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)} disabled={isLoading}>
               Cancelar
             </Button>
-            <Button variant="destructive" onClick={handleEliminarUser}>
+            <Button variant="destructive" onClick={handleEliminarDocente} disabled={isLoading}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Eliminar
             </Button>
           </DialogFooter>
