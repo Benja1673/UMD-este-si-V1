@@ -86,13 +86,14 @@ export async function POST(request: Request) {
         OR: [
           { rut: rut },
           { email: email }
-        ]
+         , telefono ? { telefono } : {}
+        ].filter(Boolean)
       }
     });
 
     if (existente) {
       return NextResponse.json(
-        { error: "Ya existe un docente con ese RUT o email" },
+        { error: "Ya existe un docente con ese RUT, email o teléfono" },
         { status: 409 }
       );
     }
@@ -168,8 +169,8 @@ export async function PUT(request: Request) {
       );
     }
 
-    // Verificar si el RUT o email ya existen en otro docente
-    if (rut || email) {
+    // Verificar si el RUT, email o telefono ya existen en otro docente
+    if (rut || email || telefono) {
       const duplicado = await prisma.user.findFirst({
         where: {
           AND: [
@@ -177,8 +178,9 @@ export async function PUT(request: Request) {
             {
               OR: [
                 rut ? { rut: rut } : {},
-                email ? { email: email } : {}
-              ]
+                email ? { email: email } : {},
+               telefono ? { telefono: telefono } : {}
+              ].filter(Boolean)
             }
           ]
         }
@@ -186,7 +188,7 @@ export async function PUT(request: Request) {
 
       if (duplicado) {
         return NextResponse.json(
-          { error: "Ya existe otro docente con ese RUT o email" },
+          { error: "Ya existe otro docente con ese RUT, email o teléfono" },
           { status: 409 }
         );
       }
@@ -216,7 +218,7 @@ export async function PUT(request: Request) {
         ...(apellido && { apellido: apellido }),
         ...(rut && { rut: rut }),
         ...(email && { email: email }),
-        ...(telefono !== undefined && { telefono }),
+        ...(telefono !== undefined && { telefono: telefono || null }),
         ...(especialidad !== undefined && { especialidad: especialidad }),
         ...(estado && { estado: estado }),
         ...(role && { role }),

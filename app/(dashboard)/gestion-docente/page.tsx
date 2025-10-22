@@ -106,6 +106,20 @@ export default function Page() {
     role: "docente",
   })
 
+  const initialForm = {
+    id: "",
+    nombre: "",
+    apellido: "",
+    rut: "",
+    email: "",
+    telefono: "",
+    departamentoId: "",
+    especialidad: "",
+    direccion: "",
+    fechaNacimiento: "",
+    role: "docente",
+  }
+
   // Función para mapear estado de BD a estado UI
   const mapearEstadoCurso = (estadoBD: string): string => {
     switch (estadoBD) {
@@ -281,19 +295,8 @@ export default function Page() {
 
   const handleNuevoDocente = () => {
     setUserActual(null)
-    setFormData({
-      id: "",
-      nombre: "",
-      apellido: "",
-      rut: "",
-      email: "",
-      telefono: "",
-      departamentoId: "",
-      especialidad: "",
-      direccion: "",
-      fechaNacimiento: "",
-      role: "docente",
-    })
+    setFormData(initialForm)
+    setShowCrearDepartamento(false)
     setIsDialogOpen(true)
   }
 
@@ -350,23 +353,17 @@ export default function Page() {
   }
 
   const handleGuardarDocente = async () => {
-    console.log("handleGuardarDocente called", { formData, userActual }) // added log
     // Validación de campos obligatorios
     if (!formData.nombre || !formData.apellido || !formData.rut || !formData.email) {
-      toast({
-        title: "Error",
-        description: "Por favor complete todos los campos obligatorios",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "Complete los campos obligatorios", variant: "destructive" })
       return
     }
-    
+
     setIsLoading(true)
     try {
+      let res: Response
       if (userActual) {
-        console.log("Enviando PUT /api/users", formData) // added log
-        // Editar docente existente
-        const res = await fetch("/api/users", {
+        res = await fetch("/api/users", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -383,21 +380,8 @@ export default function Page() {
             role: formData.role || "docente",
           }),
         })
-        console.log("PUT response", res.status, res.ok) // added log
-
-        if (!res.ok) {
-          const error = await res.json()
-          throw new Error(error.error || "Error al actualizar")
-        }
-
-        toast({
-          title: "Éxito",
-          description: "Docente actualizado correctamente",
-        })
       } else {
-        console.log("Enviando POST /api/users", formData) // added log
-        // Crear nuevo docente
-        const res = await fetch("/api/users", {
+        res = await fetch("/api/users", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -411,30 +395,25 @@ export default function Page() {
             fechaNacimiento: formData.fechaNacimiento || null,
             especialidad: formData.especialidad || null,
             role: formData.role || "docente",
-            password: "temporal123"
+            password: "temporal123",
           }),
-        })
-        console.log("POST response", res.status, res.ok) // added log
-
-        if (!res.ok) {
-          const error = await res.json()
-          throw new Error(error.error || "Error al crear")
-        }
-
-        toast({
-          title: "Éxito",
-          description: "Docente creado correctamente",
         })
       }
 
+      const payload = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(payload.error || payload.message || `HTTP ${res.status}`)
+      }
+
+      // éxito: recargar lista, cerrar y resetear formulario
+      await fetchUsers()
       setIsDialogOpen(false)
-      await fetchUsers() // Recargar la tabla
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      })
+      setUserActual(null)
+      setFormData(initialForm)
+      setShowCrearDepartamento(false)
+      toast({ title: "Éxito", description: userActual ? "Docente actualizado" : "Docente creado" })
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Error en la operación", variant: "destructive" })
     } finally {
       setIsLoading(false)
     }
