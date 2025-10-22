@@ -13,6 +13,7 @@ export async function GET() {
         apellido: true,
         rut: true,
         email: true,
+        telefono: true,
         especialidad: true,
         estado: true,
         departamento: {
@@ -68,8 +69,8 @@ export async function GET() {
 // POST - Crear un nuevo docente
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { nombre, apellido, rut, email, departamento, especialidad, password } = body;
+    const body = await request.json()
+    const { nombre, apellido, rut, email, telefono, departamentoId, departamento, direccion, fechaNacimiento, especialidad, password, role } = body;
 
     // Validaciones básicas
     if (!nombre || !apellido || !rut || !email) {
@@ -96,13 +97,13 @@ export async function POST(request: Request) {
       );
     }
 
-    // Buscar el departamento si se proporciona su nombre
-    let departamentoId = null;
-    if (departamento) {
-      const dept = await prisma.departamento.findFirst({
-        where: { nombre: departamento }
-      });
-      departamentoId = dept?.id || null;
+    // Buscar el departamento si se proporciona su id o su nombre
+    let departamentoIdFinal: string | null = null;
+    if (departamentoId) {
+      departamentoIdFinal = departamentoId
+    } else if (departamento) {
+      const dept = await prisma.departamento.findFirst({ where: { nombre: departamento }})
+      departamentoIdFinal = dept?.id || null
     }
 
     // Crear el docente
@@ -112,11 +113,14 @@ export async function POST(request: Request) {
         apellido: apellido,
         rut: rut,
         email: email,
+        telefono: telefono || null,
         hashedPassword: password || "temporal123", // ⚠️ TODO: Hashear con bcrypt
-        role: "docente",
+        role: role || "docente",
         especialidad: especialidad || null,
         estado: "ACTIVO",
-        departamentoId: departamentoId,
+        departamentoId: departamentoIdFinal,
+        direccion: direccion || null,
+        fechaNacimiento: fechaNacimiento ? new Date(fechaNacimiento) : null,
       },
       include: {
         departamento: true,
@@ -143,7 +147,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-    const { id, nombre, apellido, rut, email, departamento, especialidad, estado } = body;
+    const { id, nombre, apellido, rut, email, telefono, departamentoId, departamento, direccion, fechaNacimiento, especialidad, estado, role } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -189,15 +193,18 @@ export async function PUT(request: Request) {
     }
 
     // Buscar el departamento si se proporciona
-    let departamentoId = undefined;
-    if (departamento !== undefined) {
-      if (departamento) {
-        const dept = await prisma.departamento.findFirst({
-          where: { nombre: departamento }
-        });
-        departamentoId = dept?.id || null;
-      } else {
-        departamentoId = null;
+    let departamentoIdFinal = undefined as string | null | undefined;
+    if (departamentoId in body || departamentoId !== undefined) {
+      // preferir departamentoId si se envía
+      if (departamentoId !== undefined) {
+        departamentoIdFinal = departamentoId || null
+      } else if (departamento !== undefined) {
+        if (departamento) {
+          const dept = await prisma.departamento.findFirst({ where: { nombre: departamento }})
+          departamentoIdFinal = dept?.id || null
+        } else {
+          departamentoIdFinal = null
+        }
       }
     }
 
@@ -209,9 +216,13 @@ export async function PUT(request: Request) {
         ...(apellido && { apellido: apellido }),
         ...(rut && { rut: rut }),
         ...(email && { email: email }),
+        ...(telefono !== undefined && { telefono }),
         ...(especialidad !== undefined && { especialidad: especialidad }),
         ...(estado && { estado: estado }),
-        ...(departamentoId !== undefined && { departamentoId: departamentoId }),
+        ...(role && { role }),
+        ...(departamentoIdFinal !== undefined && { departamentoId: departamentoIdFinal }),
+        ...(direccion !== undefined && { direccion }),
+        ...(fechaNacimiento !== undefined && { fechaNacimiento: fechaNacimiento ? new Date(fechaNacimiento) : null }),
       },
       include: {
         departamento: true,

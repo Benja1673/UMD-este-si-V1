@@ -47,7 +47,7 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
     )
   }
 
-  // Mapear datos
+// Mapear datos
   const userSafe: UserProfile = {
     id: userDb.id,
     name: userDb.name ?? "",
@@ -67,10 +67,10 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
     nivel: i.curso.nivel as "Inicial" | "Intermedio" | "Avanzado",
     estado:
       i.estado === "NO_INSCRITO"
-        ? "No Inscrito"
+        ? "Inscrito"
         : i.estado === "APROBADO"
         ? "Aprobado"
-        : "No Aprobado",
+        : "Reprobado",
   }))
 
   return (

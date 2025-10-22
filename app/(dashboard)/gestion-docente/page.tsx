@@ -29,6 +29,8 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { ChevronDown, Filter, Edit, Trash2, Search, Plus, X, Pin as PinIcon, Loader2 } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { format } from "date-fns"
 
 // Componente BreadcrumbNav
 function BreadcrumbNav({ current }: { current: string }) {
@@ -62,9 +64,14 @@ type User = {
   rut: string
   email: string
   departamento: string
+  departamentoId?: string
   especialidad?: string
   estado: "Activo" | "Inactivo"
   cursos: Cursos
+  direccion?: string
+  fechaNacimiento?: string
+  role?: string
+  telefono?: string
 }
 
 export default function Page() {
@@ -80,14 +87,23 @@ export default function Page() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [userActual, setUserActual] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [departamentos, setDepartamentos] = useState<{ id: string; nombre: string }[]>([])
+  const [showCrearDepartamento, setShowCrearDepartamento] = useState(false)
+  const [nuevoDepartamentoNombre, setNuevoDepartamentoNombre] = useState("")
+
+  // ampliar formData para usar departamentoId, direccion, fechaNacimiento y role
   const [formData, setFormData] = useState({
     id: "",
     nombre: "",
     apellido: "",
     rut: "",
     email: "",
-    departamento: "",
+    telefono: "",
+    departamentoId: "", // ahora guardamos id
     especialidad: "",
+    direccion: "",
+    fechaNacimiento: "",
+    role: "docente",
   })
 
   // Función para mapear estado de BD a estado UI
@@ -191,10 +207,15 @@ export default function Page() {
           apellido: docente.apellido ?? "",
           rut: docente.rut ?? "",
           email: docente.email,
+          telefono: docente.telefono ?? "",
           departamento: docente.departamento?.nombre ?? "",
+          departamentoId: docente.departamento?.id ?? "",
           especialidad: docente.especialidad ?? "",
           estado: docente.estado === "ACTIVO" ? "Activo" : "Inactivo",
           cursos,
+          direccion: docente.direccion ?? undefined,
+          fechaNacimiento: docente.fechaNacimiento ? new Date(docente.fechaNacimiento).toISOString().slice(0,10) : undefined,
+          role: docente.role ?? "docente",
         }
       })
 
@@ -213,6 +234,21 @@ export default function Page() {
 
   useEffect(() => {
     fetchUsers()
+  }, [])
+
+  // Cargar departamentos
+  useEffect(() => {
+    async function fetchDepartamentos() {
+      try {
+        const res = await fetch("/api/departamentos")
+        if (!res.ok) throw new Error("No se pudieron cargar departamentos")
+        const data = await res.json()
+        setDepartamentos(data)
+      } catch (err) {
+        console.error(err)
+      }
+    }
+    fetchDepartamentos()
   }, [])
 
   // Aplicar filtros
@@ -238,8 +274,6 @@ export default function Page() {
     setUsersFiltrados(resultado)
   }, [busqueda, filtroDepto, filtroEstado, users])
 
-  const departamentos = Array.from(new Set(users.map((u) => u.departamento).filter(Boolean)))
-
   const tieneFiltroPorColumna = (col: string) => filtrosColumna[col]?.length > 0
 
   const handleClickColumna = (col: string, e: React.MouseEvent) => {
@@ -254,8 +288,12 @@ export default function Page() {
       apellido: "",
       rut: "",
       email: "",
-      departamento: "",
+      telefono: "",
+      departamentoId: "",
       especialidad: "",
+      direccion: "",
+      fechaNacimiento: "",
+      role: "docente",
     })
     setIsDialogOpen(true)
   }
@@ -268,8 +306,12 @@ export default function Page() {
       apellido: user.apellido,
       rut: user.rut,
       email: user.email,
-      departamento: user.departamento,
+      telefono: user.telefono || "",
+      departamentoId: user.departamentoId || "",
       especialidad: user.especialidad || "",
+      direccion: user.direccion || "",
+      fechaNacimiento: user.fechaNacimiento || "",
+      role: user.role || "docente",
     })
     setIsDialogOpen(true)
   }
@@ -279,9 +321,32 @@ export default function Page() {
     setIsDeleteDialogOpen(true)
   }
 
-  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setFormData({ ...formData, [name]: value })
+  }
+
+  const handleSelectDepartamento = (id: string) => {
+    setFormData({ ...formData, departamentoId: id })
+  }
+
+  const handleCrearDepartamento = async () => {
+    if (!nuevoDepartamentoNombre.trim()) return
+    try {
+      const res = await fetch("/api/departamentos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre: nuevoDepartamentoNombre.trim() }),
+      })
+      if (!res.ok) throw new Error("No se pudo crear departamento")
+      const dept = await res.json()
+      setDepartamentos((d) => [dept, ...d])
+      setFormData({ ...formData, departamentoId: dept.id })
+      setNuevoDepartamentoNombre("")
+      setShowCrearDepartamento(false)
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" })
+    }
   }
 
   const handleGuardarDocente = async () => {
@@ -302,7 +367,19 @@ export default function Page() {
         const res = await fetch("/api/users", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify({
+            id: formData.id,
+            nombre: formData.nombre,
+            apellido: formData.apellido,
+            rut: formData.rut,
+            email: formData.email,
+            telefono: formData.telefono || null,
+            departamentoId: formData.departamentoId || null,
+            direccion: formData.direccion || null,
+            fechaNacimiento: formData.fechaNacimiento || null,
+            especialidad: formData.especialidad || null,
+            role: formData.role || "docente",
+          }),
         })
 
         if (!res.ok) {
@@ -319,7 +396,19 @@ export default function Page() {
         const res = await fetch("/api/users", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify({
+            nombre: formData.nombre,
+            apellido: formData.apellido,
+            rut: formData.rut,
+            email: formData.email,
+            telefono: formData.telefono || null,
+            departamentoId: formData.departamentoId || null,
+            direccion: formData.direccion || null,
+            fechaNacimiento: formData.fechaNacimiento || null,
+            especialidad: formData.especialidad || null,
+            role: formData.role || "docente",
+            password: "temporal123"
+          }),
         })
 
         if (!res.ok) {
@@ -433,11 +522,11 @@ export default function Page() {
                     <ChevronDown className="ml-2 h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent>
+                <DropdownMenuContent className="bg-white shadow-md">
                   <DropdownMenuItem onClick={() => setFiltroDepto("todos")}>Todos</DropdownMenuItem>
                   {departamentos.map((depto) => (
-                    <DropdownMenuItem key={depto} onClick={() => setFiltroDepto(depto)}>
-                      {depto}
+                    <DropdownMenuItem key={depto.id} onClick={() => setFiltroDepto(depto.nombre)}>
+                      {depto.nombre}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -613,7 +702,7 @@ export default function Page() {
 
       {/* Dialog de Crear/Editar Docente */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md bg-white shadow-lg">
           <DialogHeader>
             <DialogTitle>{userActual ? "Editar Docente" : "Nuevo Docente"}</DialogTitle>
             <DialogDescription>
@@ -666,25 +755,78 @@ export default function Page() {
                 required
               />
             </div>
+
+            <div>
+              <Label htmlFor="telefono">Teléfono</Label>
+              <Input
+                id="telefono"
+                name="telefono"
+                value={formData.telefono}
+                onChange={handleFormChange}
+                placeholder="+56 9 1234 5678"
+              />
+            </div>
+
             <div>
               <Label htmlFor="departamento">Departamento</Label>
-              <Input
-                id="departamento"
-                name="departamento"
-                value={formData.departamento}
-                onChange={handleFormChange}
-                placeholder="Ingeniería"
-              />
+              <Select value={formData.departamentoId || "none"} onValueChange={(v) => {
+                if (v === "__crear_nuevo__") {
+                  setShowCrearDepartamento(true)
+                } else {
+                  // "none" representa ninguno -> guardar cadena vacía
+                  setFormData({ ...formData, departamentoId: v === "none" ? "" : v })
+                }
+              }}>
+                <SelectTrigger id="departamento">
+                  <SelectValue placeholder="Selecciona departamento" />
+                </SelectTrigger>
+                <SelectContent className="bg-white shadow-md">
+                   <SelectItem value="none">-- ninguno --</SelectItem>
+                   {departamentos.map((d) => (
+                     <SelectItem key={d.id} value={d.id}>
+                       {d.nombre}
+                     </SelectItem>
+                   ))}
+                   <SelectItem value="__crear_nuevo__">
+                     + Crear nuevo departamento
+                   </SelectItem>
+                 </SelectContent>
+               </Select>
+              {showCrearDepartamento && (
+                <div className="mt-2 flex gap-2">
+                  <Input
+                    placeholder="Nombre nuevo departamento"
+                    value={nuevoDepartamentoNombre}
+                    onChange={(e) => setNuevoDepartamentoNombre(e.target.value)}
+                  />
+                  <Button onClick={handleCrearDepartamento}>Crear</Button>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="direccion">Dirección</Label>
+              <Input id="direccion" name="direccion" value={formData.direccion} onChange={handleFormChange} />
+            </div>
+            <div>
+              <Label htmlFor="fechaNacimiento">Fecha de Nacimiento</Label>
+              <Input id="fechaNacimiento" name="fechaNacimiento" type="date" value={formData.fechaNacimiento} onChange={handleFormChange} />
             </div>
             <div>
               <Label htmlFor="especialidad">Especialidad</Label>
-              <Input
-                id="especialidad"
-                name="especialidad"
-                value={formData.especialidad}
-                onChange={handleFormChange}
-                placeholder="Matemáticas"
-              />
+              <Input id="especialidad" name="especialidad" value={formData.especialidad} onChange={handleFormChange} />
+            </div>
+            <div>
+              <Label htmlFor="role">Role</Label>
+              <Select value={formData.role} onValueChange={(v) => setFormData({ ...formData, role: v })}>
+                <SelectTrigger id="role">
+                  <SelectValue placeholder="Selecciona role" />
+                </SelectTrigger>
+                <SelectContent className="bg-white shadow-md">
+                  <SelectItem value="docente">Docente</SelectItem>
+                  <SelectItem value="supervisor">Supervisor</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>
@@ -701,26 +843,26 @@ export default function Page() {
 
       {/* Dialog de Confirmación de Eliminación */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirmar eliminación</DialogTitle>
-            <DialogDescription>
-              ¿Está seguro que desea eliminar al docente{" "}
-              <strong>
-                {userActual?.nombre} {userActual?.apellido}
-              </strong>
-              ? Esta acción no se puede deshacer.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)} disabled={isLoading}>
-              Cancelar
-            </Button>
-            <Button variant="destructive" onClick={handleEliminarDocente} disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Eliminar
-            </Button>
-          </DialogFooter>
+        <DialogContent className="bg-white shadow-lg">
+           <DialogHeader>
+             <DialogTitle>Confirmar eliminación</DialogTitle>
+             <DialogDescription>
+               ¿Está seguro que desea eliminar al docente{" "}
+               <strong>
+                 {userActual?.nombre} {userActual?.apellido}
+               </strong>
+               ? Esta acción no se puede deshacer.
+             </DialogDescription>
+           </DialogHeader>
+           <DialogFooter>
+             <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)} disabled={isLoading}>
+               Cancelar
+             </Button>
+             <Button variant="destructive" onClick={handleEliminarDocente} disabled={isLoading}>
+               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+               Eliminar
+             </Button>
+           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

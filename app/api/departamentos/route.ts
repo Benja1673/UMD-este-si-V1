@@ -1,18 +1,34 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { NextResponse } from "next/server"
+import { prisma } from "@/lib/prisma"
 
 export async function GET() {
   try {
-    const departamentos = await prisma.departamento.findMany({
+    const deps = await prisma.departamento.findMany({
       select: { id: true, nombre: true, codigo: true },
       orderBy: { nombre: "asc" },
-    });
-    return NextResponse.json(departamentos, { status: 200 });
+    })
+    return NextResponse.json(deps)
   } catch (error) {
-    console.error("Error al traer departamentos:", error);
-    return NextResponse.json(
-      { error: "No se pudieron cargar los departamentos" },
-      { status: 500 }
-    );
+    console.error("Error al traer departamentos:", error)
+    return NextResponse.json({ error: "No se pudieron cargar los departamentos" }, { status: 500 })
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json()
+    const nombre = (body.nombre || "").trim()
+    if (!nombre) return NextResponse.json({ error: "Nombre requerido" }, { status: 400 })
+
+    const existe = await prisma.departamento.findFirst({ where: { nombre } })
+    if (existe) return NextResponse.json(existe, { status: 200 })
+
+    const nuevo = await prisma.departamento.create({
+      data: { nombre, codigo: body.codigo ?? null },
+    })
+    return NextResponse.json(nuevo, { status: 201 })
+  } catch (error) {
+    console.error("Error creando departamento:", error)
+    return NextResponse.json({ error: "No se pudo crear departamento" }, { status: 500 })
   }
 }

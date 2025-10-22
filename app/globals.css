@@ -74,3 +74,41 @@
     color: hsl(var(--foreground));
   }
 }
+
+@layer base {
+  /* Forzar fondo blanco y sombra en Dialog / Select / Popover (Radix / shadcn) */
+  [data-radix-dialog-content],
+  [data-radix-select-content],
+  [data-radix-popover-content],
+  .radix-dialog-content,
+  .radix-select-content,
+  .radix-popover-content,
+  .SelectContent,
+  .DialogContent,
+  .dialog-content {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.12) !important;
+    border-radius: 0.5rem !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: 1px solid rgba(15, 23, 42, 0.06) !important;
+  }
+
+  /* Asegurar overlay oscuro (fondo detrás del modal) */
+  [data-radix-overlay],
+  .radix-dialog-overlay,
+  .dialog-overlay {
+    background-color: rgba(0, 0, 0, 0.35) !important;
+  }
+
+  /* Forzar items y triggers blancos (select/dropdown) */
+  [data-radix-select-trigger],
+  .radix-select-trigger,
+  .SelectTrigger,
+  .SelectItem,
+  [data-radix-select-content] [data-radix-select-item] {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+}
