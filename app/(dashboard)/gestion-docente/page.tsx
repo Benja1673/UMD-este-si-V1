@@ -207,7 +207,6 @@ export default function Page() {
           apellido: docente.apellido ?? "",
           rut: docente.rut ?? "",
           email: docente.email,
-          telefono: docente.telefono ?? "",
           departamento: docente.departamento?.nombre ?? "",
           departamentoId: docente.departamento?.id ?? "",
           especialidad: docente.especialidad ?? "",
@@ -299,6 +298,7 @@ export default function Page() {
   }
 
   const handleEditarDocente = (user: User) => {
+    console.log("handleEditarDocente called", user) // added log
     setUserActual(user)
     setFormData({
       id: user.id,
@@ -350,6 +350,7 @@ export default function Page() {
   }
 
   const handleGuardarDocente = async () => {
+    console.log("handleGuardarDocente called", { formData, userActual }) // added log
     // Validación de campos obligatorios
     if (!formData.nombre || !formData.apellido || !formData.rut || !formData.email) {
       toast({
@@ -359,10 +360,11 @@ export default function Page() {
       })
       return
     }
-
+    
     setIsLoading(true)
     try {
       if (userActual) {
+        console.log("Enviando PUT /api/users", formData) // added log
         // Editar docente existente
         const res = await fetch("/api/users", {
           method: "PUT",
@@ -381,6 +383,7 @@ export default function Page() {
             role: formData.role || "docente",
           }),
         })
+        console.log("PUT response", res.status, res.ok) // added log
 
         if (!res.ok) {
           const error = await res.json()
@@ -392,6 +395,7 @@ export default function Page() {
           description: "Docente actualizado correctamente",
         })
       } else {
+        console.log("Enviando POST /api/users", formData) // added log
         // Crear nuevo docente
         const res = await fetch("/api/users", {
           method: "POST",
@@ -410,6 +414,7 @@ export default function Page() {
             password: "temporal123"
           }),
         })
+        console.log("POST response", res.status, res.ok) // added log
 
         if (!res.ok) {
           const error = await res.json()
@@ -780,8 +785,8 @@ export default function Page() {
                 <SelectTrigger id="departamento">
                   <SelectValue placeholder="Selecciona departamento" />
                 </SelectTrigger>
-                <SelectContent className="bg-white shadow-md">
-                   <SelectItem value="none">-- ninguno --</SelectItem>
+                <SelectContent>
+                  <SelectItem value="none">-- ninguno --</SelectItem>
                    {departamentos.map((d) => (
                      <SelectItem key={d.id} value={d.id}>
                        {d.nombre}
@@ -790,8 +795,8 @@ export default function Page() {
                    <SelectItem value="__crear_nuevo__">
                      + Crear nuevo departamento
                    </SelectItem>
-                 </SelectContent>
-               </Select>
+                </SelectContent>
+              </Select>
               {showCrearDepartamento && (
                 <div className="mt-2 flex gap-2">
                   <Input
