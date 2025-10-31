@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { useToast } from "@/hooks/use-toast"
 
 type Docente = {
   id: string
@@ -29,16 +30,22 @@ type Docente = {
   } | null
 }
 
+type DocenteInscrito = Docente & {
+  inscripcionId?: string // ID de la inscripción en BD (si ya existe)
+  estadoInscripcion: string // Estado actual
+}
+
 export default function EditarCursoPage() {
   const params = useParams()
   const router = useRouter()
+  const { toast } = useToast()
   const id = params?.id as string
 
   const [cursoData, setCursoData] = useState<any>(null)
   const [departamentos, setDepartamentos] = useState<{ id: string; nombre: string }[]>([])
   const [categorias, setCategorias] = useState<{ id: string; nombre: string }[]>([])
   const [docentesDisponibles, setDocentesDisponibles] = useState<Docente[]>([])
-  const [docentesInscritos, setDocentesInscritos] = useState<Docente[]>([])
+  const [docentesInscritos, setDocentesInscritos] = useState<DocenteInscrito[]>([])
   const [docentesNoInscritos, setDocentesNoInscritos] = useState<Docente[]>([])
   const [busqueda, setBusqueda] = useState("")
   const [filtroDepartamento, setFiltroDepartamento] = useState("todos")
@@ -75,16 +82,24 @@ export default function EditarCursoPage() {
         setDocentesDisponibles(users)
         setCursoData(cursoRes)
 
-        // Inscritos desde la API
-        const inscritos = cursoRes.inscripciones.map((i: any) => i.usuario)
+        // Inscritos desde la API con su ID de inscripción y estado
+        const inscritos: DocenteInscrito[] = cursoRes.inscripciones.map((i: any) => ({
+          ...i.usuario,
+          inscripcionId: i.id, // ID de la inscripción en BD
+          estadoInscripcion: i.estado || "INSCRITO",
+        }))
         setDocentesInscritos(inscritos)
 
         // No inscritos = todos los docentes - los inscritos
-        const noInscritos = users.filter((u: Docente) => !inscritos.some((i: Docente) => i.id === u.id))
+        const noInscritos = users.filter((u: Docente) => !inscritos.some((i) => i.id === u.id))
         setDocentesNoInscritos(noInscritos)
       } catch (error) {
         console.error(error)
-        alert("Error cargando datos del curso")
+        toast({
+          title: "Error",
+          description: "Error cargando datos del curso",
+          variant: "destructive",
+        })
       }
       setLoading(false)
     }
@@ -108,14 +123,22 @@ export default function EditarCursoPage() {
     return cumpleBusqueda && cumpleDepto && cumpleEsp
   })
 
-  // Inscribir / desinscribir docentes
+  // Inscribir docentes seleccionados
   const inscribirSeleccionados = () => {
-    const docentesAInscribir = docentesNoInscritos.filter((d) => seleccionadosNoInscritos.includes(d.id))
+    const docentesAInscribir = docentesNoInscritos
+      .filter((d) => seleccionadosNoInscritos.includes(d.id))
+      .map((d) => ({
+        ...d,
+        inscripcionId: undefined, // No tiene ID porque es nuevo
+        estadoInscripcion: "INSCRITO", // Estado por defecto
+      }))
+
     setDocentesInscritos([...docentesInscritos, ...docentesAInscribir])
     setDocentesNoInscritos(docentesNoInscritos.filter((d) => !seleccionadosNoInscritos.includes(d.id)))
     setSeleccionadosNoInscritos([])
   }
 
+  // Desinscribir docentes seleccionados
   const desinscribirSeleccionados = () => {
     const docentesADesinscribir = docentesInscritos.filter((d) => seleccionadosInscritos.includes(d.id))
     setDocentesNoInscritos([...docentesNoInscritos, ...docentesADesinscribir])
@@ -123,41 +146,115 @@ export default function EditarCursoPage() {
     setSeleccionadosInscritos([])
   }
 
+  // Manejar cambio de estado de inscripción
+  const handleEstadoChange = async (docente: DocenteInscrito, nuevoEstado: string) => {
+    try {
+      // Si la inscripción ya existe en BD, hacer PATCH
+      if (docente.inscripcionId) {
+        const res = await fetch(`/api/inscripciones/${docente.inscripcionId}/estado`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ estado: nuevoEstado }),
+        })
+
+        if (!res.ok) {
+          throw new Error("Error al actualizar estado en el servidor")
+        }
+
+        toast({
+          title: "Éxito",
+          description: "Estado actualizado correctamente",
+        })
+      }
+
+      // Actualizar estado local (para nuevos y existentes)
+      setDocentesInscritos((prev) =>
+        prev.map((d) =>
+          d.id === docente.id ? { ...d, estadoInscripcion: nuevoEstado } : d
+        )
+      )
+    } catch (error) {
+      console.error(error)
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el estado",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Eliminar curso
   const handleEliminarCurso = async () => {
     if (!confirm("¿Seguro que deseas eliminar este curso?")) return
-    await fetch(`/api/cursos/${id}`, { method: "DELETE" })
-    router.push("/gestion-cursos")
+
+    try {
+      const res = await fetch(`/api/cursos/${id}`, { method: "DELETE" })
+      if (!res.ok) throw new Error("Error al eliminar")
+
+      toast({
+        title: "Éxito",
+        description: "Curso eliminado correctamente",
+      })
+      router.push("/gestion-cursos")
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudo eliminar el curso",
+        variant: "destructive",
+      })
+    }
   }
 
-const handleGuardarCambios = async () => {
-  try {
-    const inscripcionesActualizadas = docentesInscritos.map((d) => {
-      const insc = cursoData.inscripciones.find((i: any) => i.usuario.id === d.id);
-      return {
+  // Guardar cambios
+  const handleGuardarCambios = async () => {
+    try {
+      const inscripcionesActualizadas = docentesInscritos.map((d) => ({
         userId: d.id,
-        estado: insc?.estado || "INSCRITO",
-      };
-    });
+        estado: d.estadoInscripcion,
+      }))
 
-    const response = await fetch(`/api/cursos/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...cursoData,
-        docentesInscritos: inscripcionesActualizadas, // 👈 ahora envías objetos completos
-      }),
-    });
+      console.log("📤 Enviando inscripciones:", inscripcionesActualizadas)
 
-    if (!response.ok) throw new Error("Error al guardar cambios");
-    alert("Curso actualizado correctamente");
-    router.push("/gestion-cursos");
-  } catch (error) {
-    console.error(error);
-    alert("No se pudo actualizar el curso");
+      const response = await fetch(`/api/cursos/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...cursoData,
+          docentesInscritos: inscripcionesActualizadas,
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Error al guardar cambios")
+      }
+
+      toast({
+        title: "Éxito",
+        description: "Curso actualizado correctamente",
+      })
+      router.push("/gestion-cursos")
+    } catch (error: any) {
+      console.error(error)
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo actualizar el curso",
+        variant: "destructive",
+      })
+    }
   }
-};
 
-
+  // Función para obtener color según estado
+  const getColor = (estado: string) => {
+    switch (estado) {
+      case "APROBADO":
+        return "bg-green-100 text-green-800 border-green-300"
+      case "REPROBADO":
+        return "bg-red-100 text-red-800 border-red-300"
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-300"
+    }
+  }
 
   if (loading || !cursoData) {
     return <div className="p-6 text-gray-500">Cargando datos del curso...</div>
@@ -247,105 +344,64 @@ const handleGuardarCambios = async () => {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
               {/* Izquierda: inscritos */}
               <div className="lg:col-span-5">
-             <h3 className="font-semibold mb-3 text-gray-700">
-  Docentes Inscritos ({docentesInscritos.length})
-</h3>
-<div className="border rounded-md h-96 overflow-y-auto">
-  <Table>
-    <TableHeader className="sticky top-0 bg-white">
-      <TableRow>
-        <TableHead className="w-12"></TableHead>
-        <TableHead>Nombre</TableHead>
-        <TableHead>RUT</TableHead>
-        <TableHead>Estado</TableHead>
-      </TableRow>
-    </TableHeader>
-    <TableBody>
-      {docentesInscritos.length > 0 ? (
-        docentesInscritos.map((docente: any) => {
-          const inscripcion = cursoData.inscripciones.find(
-            (i: any) => i.usuario.id === docente.id
-          );
-
-          const estado = inscripcion?.estado || "INSCRITO";
-
-          const handleEstadoChange = async (nuevoEstado: string) => {
-            try {
-              const res = await fetch(`/api/inscripciones/${inscripcion.id}/estado`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ estado: nuevoEstado }),
-              });
-
-              if (res.ok) {
-                // Actualiza el estado localmente
-                setCursoData((prev: any) => ({
-                  ...prev,
-                  inscripciones: prev.inscripciones.map((i: any) =>
-                    i.id === inscripcion.id ? { ...i, estado: nuevoEstado } : i
-                  ),
-                }));
-              } else {
-                alert("Error al actualizar estado");
-              }
-            } catch (error) {
-              console.error(error);
-              alert("Error de conexión al actualizar estado");
-            }
-          };
-
-          const getColor = (estado: string) => {
-            switch (estado) {
-              case "APROBADO":
-                return "bg-green-100 text-green-800";
-              case "REPROBADO":
-                return "bg-red-100 text-red-800";
-              default:
-                return "bg-gray-100 text-gray-800";
-            }
-          };
-
-          return (
-            <TableRow key={docente.id}>
-              <TableCell>
-                <Checkbox
-                  checked={seleccionadosInscritos.includes(docente.id)}
-                  onCheckedChange={() =>
-                    setSeleccionadosInscritos((prev) =>
-                      prev.includes(docente.id)
-                        ? prev.filter((i) => i !== docente.id)
-                        : [...prev, docente.id]
-                    )
-                  }
-                />
-              </TableCell>
-              <TableCell>{`${docente.name} ${docente.apellido}`}</TableCell>
-              <TableCell>{docente.rut}</TableCell>
-              <TableCell>
-                <Select value={estado} onValueChange={handleEstadoChange}>
-                  <SelectTrigger className={`w-40 ${getColor(estado)} text-center`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="INSCRITO">Inscrito</SelectItem>
-                    <SelectItem value="APROBADO">Aprobado</SelectItem>
-                    <SelectItem value="REPROBADO">Reprobado</SelectItem>
-                  </SelectContent>
-                </Select>
-              </TableCell>
-            </TableRow>
-          );
-        })
-      ) : (
-        <TableRow>
-          <TableCell colSpan={4} className="text-center text-gray-500 py-8">
-            No hay docentes inscritos
-          </TableCell>
-        </TableRow>
-      )}
-    </TableBody>
-  </Table>
-</div>
+                <h3 className="font-semibold mb-3 text-gray-700">
+                  Docentes Inscritos ({docentesInscritos.length})
+                </h3>
+                <div className="border rounded-md h-96 overflow-y-auto">
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-white z-10">
+                      <TableRow>
+                        <TableHead className="w-12"></TableHead>
+                        <TableHead>Nombre</TableHead>
+                        <TableHead>RUT</TableHead>
+                        <TableHead>Estado</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {docentesInscritos.length > 0 ? (
+                        docentesInscritos.map((docente) => (
+                          <TableRow key={docente.id}>
+                            <TableCell>
+                              <Checkbox
+                                checked={seleccionadosInscritos.includes(docente.id)}
+                                onCheckedChange={() =>
+                                  setSeleccionadosInscritos((prev) =>
+                                    prev.includes(docente.id)
+                                      ? prev.filter((i) => i !== docente.id)
+                                      : [...prev, docente.id]
+                                  )
+                                }
+                              />
+                            </TableCell>
+                            <TableCell>{`${docente.name} ${docente.apellido}`}</TableCell>
+                            <TableCell>{docente.rut}</TableCell>
+                            <TableCell>
+                              <Select
+                                value={docente.estadoInscripcion}
+                                onValueChange={(nuevoEstado) => handleEstadoChange(docente, nuevoEstado)}
+                              >
+                                <SelectTrigger className={`w-40 ${getColor(docente.estadoInscripcion)}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="INSCRITO">Inscrito</SelectItem>
+                                  <SelectItem value="APROBADO">Aprobado</SelectItem>
+                                  <SelectItem value="REPROBADO">Reprobado</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-gray-500 py-8">
+                            No hay docentes inscritos
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
 
               {/* Botones centrales */}
@@ -386,7 +442,7 @@ const handleGuardarCambios = async () => {
                   <div className="flex gap-2">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="flex-1 bg-transparent">
+                        <Button variant="outline" size="sm" className="flex-1">
                           <Filter className="mr-2 h-4 w-4" /> Departamento
                         </Button>
                       </DropdownMenuTrigger>
@@ -402,7 +458,7 @@ const handleGuardarCambios = async () => {
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="flex-1 bg-transparent">
+                        <Button variant="outline" size="sm" className="flex-1">
                           <Filter className="mr-2 h-4 w-4" /> Especialidad
                         </Button>
                       </DropdownMenuTrigger>
@@ -420,7 +476,7 @@ const handleGuardarCambios = async () => {
 
                 <div className="border rounded-md h-96 overflow-y-auto">
                   <Table>
-                    <TableHeader className="sticky top-0 bg-white">
+                    <TableHeader className="sticky top-0 bg-white z-10">
                       <TableRow>
                         <TableHead className="w-12"></TableHead>
                         <TableHead>Nombre</TableHead>
@@ -466,7 +522,7 @@ const handleGuardarCambios = async () => {
 
         {/* Botones finales */}
         <div className="flex justify-between mt-6">
-          <Button onClick={handleEliminarCurso} variant="destructive" className="bg-red-600 hover:bg-red-700" size="lg">
+          <Button onClick={handleEliminarCurso} variant="destructive" size="lg">
             <Trash2 className="mr-2 h-4 w-4" /> Eliminar Curso
           </Button>
           <Button onClick={handleGuardarCambios} className="bg-blue-600 hover:bg-blue-700" size="lg">

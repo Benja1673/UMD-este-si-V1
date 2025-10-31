@@ -151,9 +151,9 @@ model Certificado {
   activo             Boolean   @default(true)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
-  userId             String
+  userId             String?
 
-  usuario User @relation(fields: [userId], references: [id], onUpdate: NoAction)
+  usuario  User? @relation(fields: [userId], references: [id], onUpdate: NoAction)
 
   @@map("certificados")
 }

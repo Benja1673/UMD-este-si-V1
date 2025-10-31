@@ -1,3 +1,5 @@
+import Link from "next/link"
+
 export default function AcademiaCard() {
   return (
     <div className="bg-gray-100 rounded-lg p-6">
@@ -18,7 +20,14 @@ export default function AcademiaCard() {
             <p className="text-sm">Accede al sistema de gestión académica para profesores y administrativos.</p>
           </div>
           <div className="mt-4 flex justify-end">
-            <button className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Acceder</button>
+            <Link 
+              href="https://www.hola.com/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 inline-block"
+            >
+              Acceder
+            </Link>
           </div>
         </div>
 
@@ -36,7 +45,14 @@ export default function AcademiaCard() {
             <p className="text-sm">Genera reportes y visualiza estadísticas sobre el rendimiento académico.</p>
           </div>
           <div className="mt-4 flex justify-end">
-            <button className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">Acceder</button>
+            <Link 
+              href="https://www.hola.com/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 inline-block"
+            >
+              Acceder
+            </Link>
           </div>
         </div>
       </div>

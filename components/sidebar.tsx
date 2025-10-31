@@ -1,19 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { JSX, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, User, BookOpen, GraduationCap, Layers, FileText, ChevronRight, Pin, PieChart } from "lucide-react";
-import { useSession } from "next-auth/react"; // Importa useSession
+import { Home, User, GraduationCap, Layers, FileText, ChevronRight, PieChart, Settings } from "lucide-react";
+import { useSession } from "next-auth/react";
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { data: session } = useSession(); // Obtén la sesión
-  console.log("Session data:", session); // Imprimir la sesión en la consola
+  const { data: session } = useSession();
   const [isFixed, setIsFixed] = useState(true);
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
 
-  const menuItems = [
+  type SubmenuItem = { id: string; label: string };
+  type MenuItem = {
+    id: string;
+    label: string;
+    href: string;
+    icon: JSX.Element;
+    hasSubmenu: boolean;
+    submenu?: SubmenuItem[];
+  };
+
+  const menuItems: MenuItem[] = [
     {
       id: "inicio",
       label: "Inicio",
@@ -27,20 +36,6 @@ export default function Sidebar() {
       href: "/mis-datos",
       icon: <User className="h-5 w-5" />,
       hasSubmenu: false,
-    },
-    {
-      id: "informacion",
-      label: "Información Académica",
-      href: "/informacion-academica",
-      icon: <BookOpen className="h-5 w-5" />,
-      hasSubmenu: true,
-      submenu: [
-        { id: "avance", label: "Avance De Malla" },
-        { id: "notas", label: "Notas" },
-        { id: "matricula", label: "Matrícula De Excepción" },
-        { id: "horario", label: "Horario" },
-        { id: "boletin", label: "Boletín De Notas" },
-      ],
     },
     {
       id: "sistemas",
@@ -68,6 +63,13 @@ export default function Sidebar() {
       label: "Gestión Cursos",
       href: "/gestion-cursos",
       icon: <FileText className="h-5 w-5" />,
+      hasSubmenu: false,
+    },
+    {
+      id: "gestion-servicios",
+      label: "Gestión Servicios",
+      href: "/gestion-servicios",
+      icon: <Settings className="h-5 w-5" />,
       hasSubmenu: false,
     },
     {
@@ -104,9 +106,9 @@ export default function Sidebar() {
   // Filtra los items del menú según el rol
   const filteredMenuItems = menuItems.filter(item => {
     if (session?.user.role?.toUpperCase() === "DOCENTE") {
-      return !["gestion-docente", "gestion-cursos", "graficos-cursos"].includes(item.id);
+      return !["gestion-docente", "gestion-cursos", "gestion-servicios", "graficos-cursos"].includes(item.id);
     }
-    return true; // Mostrar todos los elementos para ADMIN y SUPERVISOR
+    return true;
   });
 
   return (
@@ -167,9 +169,7 @@ export default function Sidebar() {
           </ul>
         </nav>
 
-        <div className="p-4 border-t">
-
-        </div>
+        <div className="p-4 border-t"></div>
       </div>
     </aside>
   );
