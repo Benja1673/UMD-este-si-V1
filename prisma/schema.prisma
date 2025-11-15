@@ -87,6 +87,10 @@ model Curso {
 
   inscripciones     InscripcionCurso[]
 
+  // 🔥 Nueva relación con condiciones
+  condiciones       CondicionServicio[]
+
+
   @@map("cursos")
 }
 
@@ -181,4 +185,22 @@ model PasswordReset {
   expiresAt DateTime
   used      Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+
+model CondicionServicio {
+  id              String   @id @default(cuid())
+  servicioTipo    String   // 'SISTEMA', 'CAPACITACION', 'EVALUACION', 'CERTIFICADO'
+  servicioId      String
+  cursoId         String?  // puede ser NULL si es "General"
+  estadoRequerido String?  // 'INSCRITO', 'APROBADO', 'REPROBADO', etc.
+  esGeneral       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  curso Curso? @relation(fields: [cursoId], references: [id], onUpdate: NoAction, onDelete: Cascade)
+
+  @@index([servicioId, servicioTipo])
+  @@index([cursoId])
+  @@index([esGeneral])
+  @@map("condiciones_servicios")
 }
