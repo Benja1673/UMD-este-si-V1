@@ -65,7 +65,7 @@ export default function GestionServicios() {
       case "sistemas": return "/api/sistemas"
       case "capacitaciones": return "/api/capacitaciones"
       case "evaluaciones": return "/api/evaluaciones"
-      case "certificados": return "/api/certificados-sistema"
+      case "certificados": return "/api/certificados"
       default: return "/api/sistemas"
     }
   }

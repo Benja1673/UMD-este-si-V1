@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { FileText, Download, Loader2, ExternalLink } from "lucide-react"
+import { FileText, Download, Loader2 } from "lucide-react"
 
 type Certificado = {
   id: string
@@ -19,6 +19,7 @@ export default function CertificadosList() {
   const [certificados, setCertificados] = useState<Certificado[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [generandoPdf, setGenerandoPdf] = useState<string | null>(null)
 
   useEffect(() => {
     fetchCertificados()
@@ -47,20 +48,57 @@ export default function CertificadosList() {
     }
   }
 
-  const handleDescargar = (certificado: Certificado) => {
+  const handleDescargar = async (certificado: Certificado) => {
     // Si tiene URL de archivo, descargar
     if (certificado.urlArchivo) {
       window.open(certificado.urlArchivo, '_blank', 'noopener,noreferrer')
+      return
     } 
+    
     // Si la descripción es una URL, abrirla
-    else if (certificado.descripcion && certificado.descripcion.startsWith('http')) {
+    if (certificado.descripcion && certificado.descripcion.startsWith('http')) {
       window.open(certificado.descripcion, '_blank', 'noopener,noreferrer')
+      return
     }
-    // Sino, mostrar mensaje o generar certificado
-    else {
-      console.log("Generando certificado:", certificado.id)
-      alert(`Generando certificado: ${certificado.titulo}`)
-      // Aquí puedes agregar la lógica para generar el certificado
+    
+    // Generar certificado PDF
+    try {
+      setGenerandoPdf(certificado.id)
+      
+      const res = await fetch('/api/certificados/generar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          certificadoId: certificado.id
+        })
+      })
+
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.error || 'Error al generar certificado')
+      }
+
+      // Descargar el PDF
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Certificado_${certificado.titulo.replace(/\s+/g, '_')}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      
+    } catch (error: any) {
+      console.error('Error generando certificado:', error)
+      setError(`Error al generar certificado: ${error.message}`)
+      
+      // Limpiar error después de 5 segundos
+      setTimeout(() => setError(null), 5000)
+    } finally {
+      setGenerandoPdf(null)
     }
   }
 
@@ -76,7 +114,6 @@ export default function CertificadosList() {
   const certificadoDisponible = (certificado: Certificado) => {
     if (certificado.activo === false) return false
     
-    // Verificar si está vencido
     if (certificado.fechaVencimiento) {
       const ahora = new Date()
       if (new Date(certificado.fechaVencimiento) < ahora) {
@@ -135,6 +172,7 @@ export default function CertificadosList() {
         const disponible = certificadoDisponible(certificado)
         const vigente = certificadoVigente(certificado)
         const ultimaActualizacion = certificado.fechaEmision
+        const estaGenerando = generandoPdf === certificado.id
 
         return (
           <div
@@ -201,17 +239,26 @@ export default function CertificadosList() {
             <button
               onClick={() => handleDescargar(certificado)}
               className={`flex items-center px-4 py-2 rounded-md whitespace-nowrap ml-4 ${
-                disponible
+                disponible && !estaGenerando
                   ? "bg-blue-600 text-white hover:bg-blue-700"
                   : "bg-gray-300 text-gray-500 cursor-not-allowed"
               }`}
-              disabled={!disponible}
+              disabled={!disponible || estaGenerando}
             >
-              <Download className="h-4 w-4 mr-2" />
-              {certificado.urlArchivo || (certificado.descripcion && certificado.descripcion.startsWith('http')) 
-                ? 'Descargar' 
-                : 'Generar'
-              }
+              {estaGenerando ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Generando...
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4 mr-2" />
+                  {certificado.urlArchivo || (certificado.descripcion && certificado.descripcion.startsWith('http')) 
+                    ? 'Descargar' 
+                    : 'Generar'
+                  }
+                </>
+              )}
             </button>
           </div>
         )

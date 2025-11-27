@@ -78,6 +78,7 @@ model Curso {
   instructor      String?
   tipo              String              @default("Curso")
   ano               Int                 @default(2025)
+    semestre          Int?                // ← Debe estar aquí
 
   // Relaciones
   prerrequisitos    CursoPrerequisito[] @relation("CursoPrincipal")
