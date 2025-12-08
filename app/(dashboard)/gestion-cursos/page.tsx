@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react"
 import Link from "next/link"
-import { Plus, Search, X, PinIcon, Filter, ChevronDown, Edit, Trash2 } from "lucide-react"
+import { Plus, Search, X, PinIcon, Filter, ChevronDown, Edit, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
 import BreadcrumbNav from "@/components/breadcrumb-nav"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,6 +27,8 @@ type Curso = {
   departamento: string
 }
 
+const ITEMS_POR_PAGINA = 50
+
 export default function GestionCursosPage() {
   const [cursos, setCursos] = useState<Curso[]>([])
   const [cursosFiltrados, setCursosFiltrados] = useState<Curso[]>([])
@@ -34,8 +36,9 @@ export default function GestionCursosPage() {
   const [error, setError] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState("")
   const [filtroDepto, setFiltroDepto] = useState<string>("todos")
-  const [filtroNivel, setFiltroNivel] = useState<string>("todos"); // Nuevo filtro por nivel
+  const [filtroNivel, setFiltroNivel] = useState<string>("todos")
   const [cabecerasFijadas, setCabecerasFijadas] = useState(false)
+  const [paginaActual, setPaginaActual] = useState(1)
 
   const [cursoActual, setCursoActual] = useState<Curso | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -111,7 +114,6 @@ export default function GestionCursosPage() {
       resultado = resultado.filter((c) => c.departamento === filtroDepto)
     }
 
-    // Filtro por nivel
     if (filtroNivel !== "todos") {
       resultado = resultado.filter((c) => c.nivel === filtroNivel)
     }
@@ -127,7 +129,13 @@ export default function GestionCursosPage() {
     }
 
     setCursosFiltrados(resultado)
+    setPaginaActual(1)
   }, [busqueda, filtroDepto, filtroNivel, cursos, filtrosColumna])
+
+  const indiceInicial = (paginaActual - 1) * ITEMS_POR_PAGINA
+  const indiceFinal = indiceInicial + ITEMS_POR_PAGINA
+  const cursosPaginados = cursosFiltrados.slice(indiceInicial, indiceFinal)
+  const totalPaginas = Math.ceil(cursosFiltrados.length / ITEMS_POR_PAGINA)
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -289,8 +297,8 @@ export default function GestionCursosPage() {
             </TableHeader>
 
             <TableBody>
-              {cursosFiltrados.length ? (
-                cursosFiltrados.map((c) => (
+              {cursosPaginados.length ? (
+                cursosPaginados.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="border border-gray-200">
                       <Link href={`/gestion-cursos/${c.id}`} className="text-blue-600 hover:underline">
@@ -312,11 +320,11 @@ export default function GestionCursosPage() {
                     <TableCell className="border border-gray-200">{c.ano}</TableCell>
                     <TableCell className="border border-gray-200">{c.departamento}</TableCell>
                     <TableCell className="text-right border border-gray-200">
-  <Link href={`/gestion-cursos/editar/${c.id}`}>
-    <Button variant="ghost" size="sm">
-      <Edit className="h-4 w-4" />
-    </Button>
-  </Link>
+                      <Link href={`/gestion-cursos/editar/${c.id}`}>
+                        <Button variant="ghost" size="sm">
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </Link>
                     </TableCell>
                   </TableRow>
                 ))
@@ -329,6 +337,44 @@ export default function GestionCursosPage() {
               )}
             </TableBody>
           </Table>
+        </div>
+
+        {/* Controles de paginación */}
+        <div className="flex items-center justify-between mt-6">
+          <div className="text-sm text-gray-600">
+            Mostrando {indiceInicial + 1} a {Math.min(indiceFinal, cursosFiltrados.length)} de {cursosFiltrados.length} cursos
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPaginaActual(Math.max(1, paginaActual - 1))}
+              disabled={paginaActual === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex items-center gap-2">
+              {Array.from({ length: totalPaginas }, (_, i) => i + 1).map((num) => (
+                <Button
+                  key={num}
+                  variant={paginaActual === num ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setPaginaActual(num)}
+                  className="w-8"
+                >
+                  {num}
+                </Button>
+              ))}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPaginaActual(Math.min(totalPaginas, paginaActual + 1))}
+              disabled={paginaActual === totalPaginas}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
 

@@ -28,7 +28,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
-import { ChevronDown, Filter, Edit, Trash2, Search, Plus, X, Pin as PinIcon, Loader2 } from "lucide-react"
+import { ChevronDown, Filter, Edit, Trash2, Search, Plus, X, Pin as PinIcon, Loader2, ChevronLeft, ChevronRight } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { format } from "date-fns"
 
@@ -74,6 +74,8 @@ type User = {
   telefono?: string
 }
 
+const ITEMS_POR_PAGINA = 50
+
 export default function Page() {
   const { toast } = useToast()
   const [users, setUsers] = useState<User[]>([])
@@ -83,6 +85,7 @@ export default function Page() {
   const [filtroEstado, setFiltroEstado] = useState("todos")
   const [filtrosColumna, setFiltrosColumna] = useState<Record<string, string[]>>({})
   const [cabecerasFijadas, setCabecerasFijadas] = useState(false)
+  const [paginaActual, setPaginaActual] = useState(1) // Nueva línea
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [userActual, setUserActual] = useState<User | null>(null)
@@ -285,7 +288,14 @@ export default function Page() {
     }
 
     setUsersFiltrados(resultado)
+    setPaginaActual(1) // Vuelve a página 1 al filtrar
   }, [busqueda, filtroDepto, filtroEstado, users])
+
+  // Calcular datos de la página actual
+  const indiceInicial = (paginaActual - 1) * ITEMS_POR_PAGINA
+  const indiceFinal = indiceInicial + ITEMS_POR_PAGINA
+  const usuariosPaginados = usersFiltrados.slice(indiceInicial, indiceFinal)
+  const totalPaginas = Math.ceil(usersFiltrados.length / ITEMS_POR_PAGINA)
 
   const tieneFiltroPorColumna = (col: string) => filtrosColumna[col]?.length > 0
 
@@ -595,8 +605,8 @@ export default function Page() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {usersFiltrados.length > 0 ? (
-                usersFiltrados.map((docente) => (
+              {usuariosPaginados.length > 0 ? (
+                usuariosPaginados.map((docente) => (
                   <TableRow key={docente.id}>
                     <TableCell className="border border-gray-200">{`${docente.nombre} ${docente.apellido}`}</TableCell>
                     <TableCell className="border border-gray-200">{docente.rut}</TableCell>
@@ -681,6 +691,44 @@ export default function Page() {
               )}
             </TableBody>
           </Table>
+        </div>
+
+        {/* Controles de paginación */}
+        <div className="flex items-center justify-between mt-6">
+          <div className="text-sm text-gray-600">
+            Mostrando {indiceInicial + 1} a {Math.min(indiceFinal, usersFiltrados.length)} de {usersFiltrados.length} docentes
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPaginaActual(Math.max(1, paginaActual - 1))}
+              disabled={paginaActual === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex items-center gap-2">
+              {Array.from({ length: totalPaginas }, (_, i) => i + 1).map((num) => (
+                <Button
+                  key={num}
+                  variant={paginaActual === num ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setPaginaActual(num)}
+                  className="w-8"
+                >
+                  {num}
+                </Button>
+              ))}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPaginaActual(Math.min(totalPaginas, paginaActual + 1))}
+              disabled={paginaActual === totalPaginas}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
