@@ -106,7 +106,12 @@ export default function GestionServicios() {
           )
           if (condRes.ok) {
             const conds = await condRes.json()
-            return { ...servicio, condiciones: conds }
+            // 🔧 Extraer el nombre del curso desde la relación
+            const condsConNombre = conds.map((cond: any) => ({
+              ...cond,
+              cursoNombre: cond.curso?.nombre || "Curso",
+            }))
+            return { ...servicio, condiciones: condsConNombre }
           }
           return servicio
         })
@@ -114,7 +119,7 @@ export default function GestionServicios() {
 
       setData(serviciosConCondiciones)
     } catch (error: any) {
-      showToast(error.message, 'error')
+      showToast(error.message, "error")
     } finally {
       setLoading(false)
     }

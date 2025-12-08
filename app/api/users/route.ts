@@ -2,11 +2,88 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-// GET - Obtener todos los docentes
-export async function GET() {
+// GET - Obtener docentes (con paginación opcional)
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const page = searchParams.get("page");
+    const limit = searchParams.get("limit");
+    const search = searchParams.get("search");
+
+    // Si NO hay parámetros de paginación, devuelve TODO (compatibilidad)
+    if (!page && !limit) {
+      const docentes = await prisma.user.findMany({
+        where: { role: "docente" },
+        select: {
+          id: true,
+          name: true,
+          apellido: true,
+          rut: true,
+          email: true,
+          telefono: true,
+          especialidad: true,
+          estado: true,
+          departamento: {
+            select: {
+              id: true,
+              nombre: true,
+              codigo: true,
+            },
+          },
+          inscripciones: {
+            select: {
+              id: true,
+              estado: true,
+              fechaInscripcion: true,
+              fechaAprobacion: true,
+              fechaInicio: true,
+              fechaFinalizacion: true,
+              nota: true,
+              observaciones: true,
+              curso: {
+                select: {
+                  id: true,
+                  nombre: true,
+                  descripcion: true,
+                  codigo: true,
+                  nivel: true,
+                  modalidad: true,
+                  activo: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { apellido: "asc" },
+      });
+
+      console.log(`📊 Total docentes encontrados: ${docentes.length}`);
+      return NextResponse.json(docentes, { status: 200 });
+    }
+
+    // 🆕 CON PAGINACIÓN
+    const pageNum = parseInt(page || "1");
+    const limitNum = parseInt(limit || "50");
+    const skip = (pageNum - 1) * limitNum;
+
+    // Construir filtro de búsqueda
+    const whereClause: any = { role: "docente" };
+    
+    if (search) {
+      whereClause.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { apellido: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+        { rut: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    // Contar total de docentes (para calcular páginas)
+    const total = await prisma.user.count({ where: whereClause });
+
+    // Obtener docentes paginados
     const docentes = await prisma.user.findMany({
-      where: { role: "docente" },
+      where: whereClause,
       select: {
         id: true,
         name: true,
@@ -48,15 +125,22 @@ export async function GET() {
         },
       },
       orderBy: { apellido: "asc" },
+      skip: skip,
+      take: limitNum,
     });
 
-    // Debug: Log para verificar datos
-    console.log(`📊 Total docentes encontrados: ${docentes.length}`);
-    docentes.forEach(d => {
-      console.log(`  - ${d.name} ${d.apellido}: ${d.inscripciones.length} inscripciones`);
-    });
+    console.log(`📊 Página ${pageNum}: ${docentes.length} de ${total} docentes`);
 
-    return NextResponse.json(docentes, { status: 200 });
+    return NextResponse.json({
+      data: docentes,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    }, { status: 200 });
+    
   } catch (error) {
     console.error("❌ Error al traer docentes:", error);
     return NextResponse.json(
