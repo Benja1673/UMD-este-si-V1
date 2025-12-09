@@ -31,7 +31,7 @@ import { useToast } from "@/hooks/use-toast"
 import { ChevronDown, Filter, Edit, Trash2, Search, Plus, X, Pin as PinIcon, Loader2, ChevronLeft, ChevronRight } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { format } from "date-fns"
-
+// Componente BreadcrumbNav
 // Componente BreadcrumbNav
 function BreadcrumbNav({ current }: { current: string }) {
   return (
