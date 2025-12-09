@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { Edit } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import {
@@ -165,7 +164,8 @@ export default function ProfileCard({ user, cursos }: ProfileCardProps) {
               <TableHead>Categoría</TableHead>
               <TableHead>Nivel</TableHead>
               <TableHead>Estado</TableHead>
-              <TableHead>Acciones</TableHead>
+              {/* Elimina esta línea */}
+              {/* <TableHead>Acciones</TableHead> */}
             </TableRow>
           </TableHeader>
 
@@ -187,11 +187,12 @@ export default function ProfileCard({ user, cursos }: ProfileCardProps) {
                   </span>
                 </TableCell>
 
-                <TableCell>
+                {/* Elimina este TableCell completo */}
+                {/* <TableCell>
                   <Button size="sm" variant="outline" onClick={() => handleEditarEstado(curso)}>
                     <Edit className="w-4 h-4 mr-1" /> Editar
                   </Button>
-                </TableCell>
+                </TableCell> */}
               </TableRow>
             ))}
           </TableBody>

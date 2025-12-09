@@ -1,6 +1,57 @@
 // app/api/users/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import bcrypt from "bcryptjs"; //
+import nodemailer from "nodemailer"; //
+
+// Helper function to generate a random temporary password
+function generateRandomPassword(length = 10) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()";
+  let password = "";
+  for (let i = 0; i < length; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
+
+// Helper function to send email
+async function sendTemporaryPasswordEmail(toEmail: string, temporaryPassword: string) {
+  // Configuración del transporte de correo (asume variables de entorno EMAIL_USER/EMAIL_PASS)
+  const transporter = nodemailer.createTransport({
+    service: "gmail", // Asumido
+    auth: {
+      user: process.env.EMAIL_USER, 
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: toEmail,
+    subject: "Credenciales de Acceso a la Plataforma UMD",
+    html: `
+      <p>Hola,</p>
+      <p>Se ha creado o restablecido tu cuenta en la Plataforma UMD.</p>
+      <p>Tu clave de acceso es: <strong>${temporaryPassword}</strong></p>
+      <p>Por motivos de seguridad, te recomendamos encarecidamente cambiar esta contraseña.</p>
+      <p>Para cambiar tu contraseña, por favor, haz lo siguiente:</p>
+      <ol>
+        <li>Ve a la página de inicio de sesión.</li>
+        <li>Haz clic en <strong>"¿Olvidaste tu contraseña?"</strong> (o "Olvidar Contraseña").</li>
+        <li>Sigue las instrucciones para establecer una nueva clave personal.</li>
+      </ol>
+      <p>¡Gracias!</p>
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`✉️ Correo enviado a ${toEmail} con clave temporal.`);
+  } catch (error) {
+    console.error("❌ Error al enviar el correo con la clave temporal:", error);
+    // Nota: En producción, se debería manejar el error de forma más robusta.
+  }
+}
 
 // GET - Obtener docentes (con paginación opcional)
 export async function GET(request: Request) {
@@ -154,7 +205,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { nombre, apellido, rut, email, telefono, departamentoId, departamento, direccion, fechaNacimiento, especialidad, password, role } = body;
+    const { nombre, apellido, rut, email, telefono, departamentoId, departamento, direccion, fechaNacimiento, especialidad, role } = body;
+    // Se ignora la 'password' del body para forzar la clave temporal.
 
     // Validaciones básicas
     if (!nombre || !apellido || !rut || !email) {
@@ -181,6 +233,12 @@ export async function POST(request: Request) {
         { status: 409 }
       );
     }
+    
+    // 🔑 Generar y hashear la clave temporal (implementación según el requisito)
+    const temporaryPassword = generateRandomPassword();
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(temporaryPassword, salt);
+    // ------------------------------------
 
     // Buscar el departamento si se proporciona su id o su nombre
     let departamentoIdFinal: string | null = null;
@@ -199,7 +257,7 @@ export async function POST(request: Request) {
         rut: rut,
         email: email,
         telefono: telefono || null,
-        hashedPassword: password || "temporal123", // ⚠️ TODO: Hashear con bcrypt
+        hashedPassword: hashedPassword, // Usar la clave hasheada
         role: role || "docente",
         especialidad: especialidad || null,
         estado: "ACTIVO",
@@ -217,6 +275,10 @@ export async function POST(request: Request) {
       }
     });
 
+    // ✉️ Enviar correo con la clave temporal
+    await sendTemporaryPasswordEmail(email, temporaryPassword);
+    // ------------------------------------
+
     console.log(`✅ Docente creado: ${nuevoDocente.name} ${nuevoDocente.apellido}`);
     return NextResponse.json(nuevoDocente, { status: 201 });
   } catch (error) {
@@ -232,7 +294,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-    const { id, nombre, apellido, rut, email, telefono, departamentoId, departamento, direccion, fechaNacimiento, especialidad, estado, role } = body;
+    const { id, nombre, apellido, rut, email, telefono, departamentoId, departamento, direccion, fechaNacimiento, especialidad, estado, role, resetPassword } = body; // Añadir 'resetPassword'
 
     if (!id) {
       return NextResponse.json(
@@ -243,7 +305,8 @@ export async function PUT(request: Request) {
 
     // Verificar que el docente existe
     const docenteExistente = await prisma.user.findUnique({
-      where: { id: id }
+      where: { id: id },
+      select: { id: true, email: true, hashedPassword: true, name: true, apellido: true }
     });
 
     if (!docenteExistente) {
@@ -252,6 +315,19 @@ export async function PUT(request: Request) {
         { status: 404 }
       );
     }
+    
+    // --- Lógica de restablecimiento de contraseña en PUT ---
+    let hashedPassword = docenteExistente.hashedPassword;
+    let temporaryPassword = null;
+    let emailChanged = email && email !== docenteExistente.email;
+    
+    // Se activa la generación de clave si se pide resetear O si se cambia el correo
+    if (resetPassword || emailChanged) {
+        temporaryPassword = generateRandomPassword();
+        const salt = await bcrypt.genSalt(10);
+        hashedPassword = await bcrypt.hash(temporaryPassword, salt);
+    }
+    // --------------------------------------------------------
 
     // Verificar si el RUT, email o telefono ya existen en otro docente
     if (rut || email || telefono) {
@@ -293,11 +369,9 @@ export async function PUT(request: Request) {
         }
       }
     }
-
-    // Actualizar el docente
-    const docenteActualizado = await prisma.user.update({
-      where: { id: id },
-      data: {
+    
+    // Contruir el objeto de datos para actualizar
+    const dataToUpdate: any = {
         ...(nombre && { name: nombre }),
         ...(apellido && { apellido: apellido }),
         ...(rut && { rut: rut }),
@@ -309,7 +383,18 @@ export async function PUT(request: Request) {
         ...(departamentoIdFinal !== undefined && { departamentoId: departamentoIdFinal }),
         ...(direccion !== undefined && { direccion }),
         ...(fechaNacimiento !== undefined && { fechaNacimiento: fechaNacimiento ? new Date(fechaNacimiento) : null }),
-      },
+    };
+
+    // Si se generó una nueva contraseña, incluirla en la actualización
+    if (temporaryPassword && hashedPassword) {
+        dataToUpdate.hashedPassword = hashedPassword;
+    }
+
+
+    // Actualizar el docente
+    const docenteActualizado = await prisma.user.update({
+      where: { id: id },
+      data: dataToUpdate,
       include: {
         departamento: true,
         inscripciones: {
@@ -319,6 +404,14 @@ export async function PUT(request: Request) {
         }
       }
     });
+
+    // ✉️ Enviar correo si se generó clave temporal
+    if (temporaryPassword && email) {
+        // Enviar al nuevo email si fue cambiado, sino al email existente del docente
+        await sendTemporaryPasswordEmail(email, temporaryPassword); 
+    }
+    // ------------------------------------
+
 
     console.log(`✅ Docente actualizado: ${docenteActualizado.name} ${docenteActualizado.apellido}`);
     return NextResponse.json(docenteActualizado, { status: 200 });
