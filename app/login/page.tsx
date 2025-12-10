@@ -38,6 +38,7 @@ const LoginPage = () => {
         {/* LOGO */}
         <div className="flex justify-center mb-8">
           <div className="flex items-center">
+            {/* Asegúrate de que esta imagen exista o usa un texto alternativo si no carga */}
             <img src="/placeholder.svg?height=60&width=60" alt="Logo UTEM" className="h-14 mr-2" />
             <div>
               <div className="text-3xl font-bold">
@@ -112,16 +113,6 @@ const LoginPage = () => {
           <Link href="/forgot-password" className="text-gray-500 hover:text-gray-700 text-sm">
             ¿Olvidó su contraseña?
           </Link>
-        </div>
-
-        {/* DATOS DE PRUEBA */}
-        <div className="mt-8 p-4 bg-blue-50 rounded-md">
-          <p className="text-sm text-blue-800 font-medium mb-2">Credenciales de prueba:</p>
-          <div className="text-xs text-blue-700 space-y-1">
-            <p><strong>Admin:</strong> admin@utem.cl / 123456</p>
-            <p><strong>Docente Inicial:</strong> supervisor@utem.cl / 1234</p>
-            <p><strong>Docente Intermedio:</strong> docente@utem.cl / 1234</p>
-          </div>
         </div>
       </div>
     </div>
