@@ -9,7 +9,6 @@ import { useSession } from "next-auth/react";
 export default function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const [isFixed, setIsFixed] = useState(true);
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
 
   type SubmenuItem = { id: string; label: string };
@@ -22,74 +21,75 @@ export default function Sidebar() {
     submenu?: SubmenuItem[];
   };
 
+  // ✅ CORRECCIÓN: Agregamos "/dashboard" al inicio de todas las rutas
   const menuItems: MenuItem[] = [
     {
       id: "inicio",
       label: "Inicio",
-      href: "/dashboard",
+      href: "/dashboard", // Esta ya estaba bien
       icon: <Home className="h-5 w-5" />,
       hasSubmenu: false,
     },
     {
       id: "datos",
       label: "Mis Datos",
-      href: "/mis-datos",
+      href: "/dashboard/mis-datos", // Antes: "/mis-datos"
       icon: <User className="h-5 w-5" />,
       hasSubmenu: false,
     },
     {
       id: "sistemas",
       label: "Sistemas",
-      href: "/sistemas",
+      href: "/dashboard/sistemas", // Antes: "/sistemas"
       icon: <Layers className="h-5 w-5" />,
       hasSubmenu: false,
     },
     {
       id: "capacitaciones",
       label: "Capacitaciones y cursos",
-      href: "/capacitaciones",
+      href: "/dashboard/capacitaciones", // Antes: "/capacitaciones"
       icon: <GraduationCap className="h-5 w-5" />,
       hasSubmenu: false,
     },
     {
       id: "gestion-docente",
       label: "Gestión Docente",
-      href: "/gestion-docente",
+      href: "/dashboard/gestion-docente", // Antes: "/gestion-docente"
       icon: <FileText className="h-5 w-5" />,
       hasSubmenu: false,
     },
     {
       id: "gestion-cursos",
       label: "Gestión Cursos",
-      href: "/gestion-cursos",
+      href: "/dashboard/gestion-cursos", // Antes: "/gestion-cursos"
       icon: <FileText className="h-5 w-5" />,
       hasSubmenu: false,
     },
     {
       id: "gestion-servicios",
       label: "Gestión Servicios",
-      href: "/gestion-servicios",
+      href: "/dashboard/gestion-servicios", // Antes: "/gestion-servicios"
       icon: <Settings className="h-5 w-5" />,
       hasSubmenu: false,
     },
     {
       id: "graficos-cursos",
       label: "Gráficos Cursos",
-      href: "/graficos-cursos",
+      href: "/dashboard/graficos-cursos", // Antes: "/graficos-cursos"
       icon: <PieChart className="h-5 w-5" />,
       hasSubmenu: false,
     },
     {
       id: "encuestas",
       label: "Evaluaciones",
-      href: "/evaluaciones",
+      href: "/dashboard/evaluaciones", // Antes: "/evaluaciones"
       icon: <FileText className="h-5 w-5" />,
       hasSubmenu: false,
     },
     {
       id: "certificados",
       label: "Certificados",
-      href: "/certificados",
+      href: "/dashboard/certificados", // Antes: "/certificados"
       icon: <FileText className="h-5 w-5" />,
       hasSubmenu: false,
     },
@@ -103,7 +103,6 @@ export default function Sidebar() {
     }
   };
 
-  // Filtra los items del menú según el rol
   const filteredMenuItems = menuItems.filter(item => {
     if (session?.user.role?.toUpperCase() === "DOCENTE") {
       return !["gestion-docente", "gestion-cursos", "gestion-servicios", "graficos-cursos"].includes(item.id);
@@ -115,6 +114,7 @@ export default function Sidebar() {
     <aside className={`bg-white border-r w-64 min-h-screen fixed left-0 top-0 z-20`}>
       <div className="flex flex-col h-full">
         <div className="p-4">
+          {/* Este link también debe apuntar a /dashboard, que ya es correcto */}
           <Link href="/dashboard" className="flex items-center">
             <span className="ml-2 text-xl font-bold text-blue-800">UMD</span>
           </Link>
@@ -128,7 +128,8 @@ export default function Sidebar() {
                   <Link
                     href={item.href}
                     className={`flex items-center px-4 py-2 text-sm rounded-md group ${
-                      pathname === item.href ? "text-blue-600 font-medium" : "text-gray-700 hover:bg-gray-100"
+                      // Mejoramos la lógica para que el item quede activo si estás dentro de una subsección
+                      pathname.startsWith(item.href) ? "text-blue-600 font-medium" : "text-gray-700 hover:bg-gray-100"
                     }`}
                     onClick={(e) => {
                       if (item.hasSubmenu) {
@@ -168,7 +169,6 @@ export default function Sidebar() {
             ))}
           </ul>
         </nav>
-
         <div className="p-4 border-t"></div>
       </div>
     </aside>
