@@ -1,9 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 
-export default function ResetPasswordPage() {
+// 1. Extraemos toda la lógica a un componente interno
+function ResetPasswordForm() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [email, setEmail] = useState("")
@@ -14,7 +15,6 @@ export default function ResetPasswordPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  // 🚀 Extraemos email y code desde la URL
   useEffect(() => {
     const emailParam = searchParams.get("email")
     const codeParam = searchParams.get("code")
@@ -122,7 +122,6 @@ export default function ResetPasswordPage() {
         </button>
       </form>
 
-      {/* ✅ Link al login */}
       <div className="mt-6 text-center">
         <button
           onClick={() => router.push("/login")}
@@ -132,5 +131,14 @@ export default function ResetPasswordPage() {
         </button>
       </div>
     </div>
+  )
+}
+
+// 2. El componente principal SOLO exporta el Suspense que envuelve al formulario
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<div className="text-center p-10">Cargando formulario...</div>}>
+      <ResetPasswordForm />
+    </Suspense>
   )
 }
