@@ -209,7 +209,7 @@ export default function GestionCursosPage() {
       <div className="bg-white rounded-lg shadow p-6">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-800">Gestión de Cursos</h1>
-          <Link href="/gestion-cursos/crear">
+          <Link href="/dashboard/gestion-cursos/crear">
             <Button className="bg-blue-600 hover:bg-blue-700">Nuevo Curso</Button>
           </Link>
         </div>
@@ -301,7 +301,7 @@ export default function GestionCursosPage() {
                 cursosPaginados.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="border border-gray-200">
-                      <Link href={`/gestion-cursos/${c.id}`} className="text-blue-600 hover:underline">
+                      <Link href={`/dashboard/gestion-cursos/${c.id}`} className="text-blue-600 hover:underline">
                         Ver curso
                       </Link>
                     </TableCell>
@@ -320,7 +320,7 @@ export default function GestionCursosPage() {
                     <TableCell className="border border-gray-200">{c.ano}</TableCell>
                     <TableCell className="border border-gray-200">{c.departamento}</TableCell>
                     <TableCell className="text-right border border-gray-200">
-                      <Link href={`/gestion-cursos/editar/${c.id}`}>
+                      <Link href={`/dashboard/gestion-cursos/editar/${c.id}`}>
                         <Button variant="ghost" size="sm">
                           <Edit className="h-4 w-4" />
                         </Button>

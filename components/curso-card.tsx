@@ -153,7 +153,7 @@ export default function CursoCard({ curso, docentes }: CursoCardProps) {
 
                 <TableCell>
                   <Link
-                    href={`/perfil-docente/${docente.id}`}
+                    href={`/dashboard/perfil-docente/${docente.id}`}
                     className="text-blue-600 hover:underline"
                   >
                     Ver Perfil
