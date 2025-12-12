@@ -46,16 +46,19 @@ export default async function ProfilePage() {
 
   // 4️⃣ Mapear cursos a tipo Curso con estado seguro
   const cursos: Curso[] = userDb.inscripciones.map((i) => {
-    let estado: Curso["estado"]
+    let estado: "Aprobado" | "Reprobado" | "Inscrito"
 
     switch (i.estado) {
       case "Aprobado":
+        estado = "Aprobado"
+        break
       case "No Aprobado":
-      case "No Inscrito":
-        estado = i.estado
+        estado = "Reprobado" // Traducimos a un estado válido
         break
       default:
-        estado = "No Inscrito"
+        // Aquí caen "No Inscrito", "Inscrito", o cualquier otro
+        // Lo dejamos como "Inscrito"
+        estado = "Inscrito"
     }
 
     return {
