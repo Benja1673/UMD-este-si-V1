@@ -1,11 +1,10 @@
-// lib/auth.ts
-import { PrismaAdapter } from "@next-auth/prisma-adapter";
+import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
-import { AuthOptions } from "next-auth";
 
-export const authOptions: AuthOptions = {
+export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   providers: [
     CredentialsProvider({
@@ -15,19 +14,28 @@ export const authOptions: AuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
-
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
+          where: { email: credentials?.email },
         });
 
-        if (!user || !user.hashedPassword) return null;
+        if (!user) return null;
 
-        const isValid = await bcrypt.compare(credentials.password, user.hashedPassword);
+        // Mantenemos tu lógica específica de hashedPassword
+        const isValid = await bcrypt.compare(
+          credentials!.password,
+          user.hashedPassword
+        );
+
         if (!isValid) return null;
 
-        // Retornamos el usuario (mantén la forma original por compatibilidad)
-        return user;
+        // ✅ Incluir id, email y role
+        return { 
+          id: user.id, 
+          email: user.email, 
+          role: user.role,
+          name: user.name,
+          apellido: user.apellido,
+        };
       },
     }),
   ],
@@ -38,23 +46,23 @@ export const authOptions: AuthOptions = {
   pages: {
     signIn: "/login",
   },
-
   callbacks: {
-  async jwt({ token, user }) {
-    if (user) {
-      token.id = user.id
-      token.role = user.role
-    }
-    return token
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        // @ts-ignore
+        token.role = user.role;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user) {
+        // @ts-ignore
+        session.user.id = token.id as string;
+        // @ts-ignore
+        session.user.role = token.role as string;
+      }
+      return session;
+    },
   },
-  async session({ session, token }) {
-    if (session.user) {
-      session.user.id = token.id
-      session.user.role = token.role
-    }
-    return session
-  },
-},
-
-
 };
