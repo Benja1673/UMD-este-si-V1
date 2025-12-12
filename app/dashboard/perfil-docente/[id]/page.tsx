@@ -1,7 +1,7 @@
 import ProfileCard, { Curso, UserProfile } from "@/components/profile-card"
 import { prisma } from "@/lib/prisma"
 import { getServerSession } from "next-auth/next"
-import { authOptions } from "@/app/api/auth/[...nextauth]/route"
+import { authOptions } from "@/lib/auth"
 
 interface ProfilePageProps {
   params: {
@@ -47,7 +47,7 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
     )
   }
 
-// Mapear datos
+  // Mapear datos
   const userSafe: UserProfile = {
     id: userDb.id,
     name: userDb.name ?? "",
