@@ -2,9 +2,11 @@
 
 import { JSX, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Home, User, GraduationCap, Layers, FileText, ChevronRight, PieChart, Settings } from "lucide-react";
 import { useSession } from "next-auth/react";
+
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -114,9 +116,24 @@ export default function Sidebar() {
     <aside className={`bg-white border-r w-64 min-h-screen fixed left-0 top-0 z-20`}>
       <div className="flex flex-col h-full">
         <div className="p-4">
-          {/* Este link también debe apuntar a /dashboard, que ya es correcto */}
           <Link href="/dashboard" className="flex items-center">
-            <span className="ml-2 text-xl font-bold text-blue-800">UMD</span>
+            
+            {/* Ajuste de Tamaño:
+               - h-14 (56px) en vez de h-10 (40px)
+               - w-12 (48px) en vez de w-8 (32px)
+               - Ajusta estos números hasta que te guste
+            */}
+            <div className="relative h-14 w-12 mr-2"> 
+              <Image 
+                src="/Logoutem-1.png" 
+                alt="Logo UTEM"
+                fill
+                className="object-contain" // Mantiene la proporción original
+                priority
+              />
+            </div>
+            
+            <span className="text-xl font-bold text-blue-800">UMD</span>
           </Link>
         </div>
 

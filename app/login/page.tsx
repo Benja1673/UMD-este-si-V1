@@ -4,6 +4,7 @@ import { useState } from "react"
 import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import Image from "next/image" // 1. Importamos el componente de imagen optimizado
 
 const LoginPage = () => {
   const [email, setEmail] = useState("")
@@ -17,10 +18,14 @@ const LoginPage = () => {
     setError("")
     setLoading(true)
 
+    // Limpieza de datos (fix para celulares)
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
+
     const res = await signIn("credentials", {
       redirect: false,
-      email,
-      password,
+      email: cleanEmail,
+      password: cleanPassword,
     })
 
     if (res?.ok) {
@@ -35,31 +40,30 @@ const LoginPage = () => {
   return (
     <div className="flex justify-center items-center min-h-screen bg-gray-100">
       <div className="bg-white shadow-md rounded-lg p-8 w-full max-w-md">
-        {/* LOGO */}
+        
+        {/* LOGO TIPO SIDEBAR (Centrado) */}
         <div className="flex justify-center mb-8">
           <div className="flex items-center">
-            {/* Asegúrate de que esta imagen exista o usa un texto alternativo si no carga */}
-            <img src="/placeholder.svg?height=60&width=60" alt="Logo UTEM" className="h-14 mr-2" />
-            <div>
-              <div className="text-3xl font-bold">
-                <span className="text-blue-600">m</span>
-                <span className="text-red-500">i</span>
-                <span className="text-yellow-500">u</span>
-                <span className="text-blue-800">t</span>
-                <span className="text-green-500">e</span>
-                <span className="text-black">m</span>
-              </div>
-              <div className="text-sm uppercase tracking-wider text-gray-700">TERRITORIO VIRTUAL</div>
+            {/* Imagen del Logo */}
+            <div className="relative h-16 w-14 mr-3"> {/* Un poco más grande que el sidebar para que destaque */}
+              <Image 
+                src="/Logoutem-1.png" 
+                alt="Logo UTEM"
+                fill
+                className="object-contain"
+                priority
+              />
             </div>
+            
+            {/* Texto UMD */}
+            <span className="text-3xl font-bold text-blue-800">UMD</span>
           </div>
         </div>
 
-        {/* MENSAJE */}
+        {/* MENSAJE ACTUALIZADO */}
         <div className="text-center mb-6">
           <p className="text-gray-600">
-            Por favor ingresa con tus credenciales de
-            <br />
-            Pasaporte.UTEM.
+            Por favor ingresa con tu correo electrónico.
           </p>
         </div>
 
@@ -77,6 +81,10 @@ const LoginPage = () => {
               onChange={(e) => setEmail(e.target.value)}
               required
               disabled={loading}
+              // Fix para teclados móviles
+              autoCapitalize="none"
+              autoComplete="email"
+              autoCorrect="off"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-purple-500"
             />
           </div>
