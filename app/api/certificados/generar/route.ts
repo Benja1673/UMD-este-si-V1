@@ -3,8 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-// IMPORTANTE: No importamos puppeteer aquí arriba para evitar errores en Vercel.
-// Lo haremos dinámicamente dentro de la función (líneas más abajo).
+// NO importamos puppeteer arriba.
 
 export async function POST(req: Request) {
   try {
@@ -20,7 +19,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "certificadoId es requerido" }, { status: 400 });
     }
 
-    // 1. Obtener datos de la Base de Datos
+    // 1. Obtener datos
     const usuario = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: { name: true, apellido: true, rut: true }
@@ -39,7 +38,7 @@ export async function POST(req: Request) {
       include: { departamento: true }
     });
 
-    // 2. Preparar variables para el Diploma
+    // 2. Variables
     const nombreCompleto = `${usuario.name || ''} ${usuario.apellido || ''}`.trim();
     const rut = usuario.rut || 'Sin RUT';
     const nombreCurso = curso?.nombre || certificado.titulo;
@@ -54,7 +53,7 @@ export async function POST(req: Request) {
     const mes = meses[fechaActual.getMonth()];
     const anioEmision = fechaActual.getFullYear();
 
-    // 3. HTML del certificado (Diseño UTEM Oficial)
+    // 3. HTML
     const html = `
 <!DOCTYPE html>
 <html lang="es">
@@ -110,16 +109,21 @@ export async function POST(req: Request) {
 </html>
     `;
 
-    // 4. LÓGICA HÍBRIDA (EL TRUCO)
+    // 4. LÓGICA DEL NAVEGADOR
     let browser;
     
-    if (process.env.NODE_ENV === 'production') {
-      // ☁️ MODO VERCEL (Producción)
-      // Usamos el Chromium ligero especial para serverless
+    // DETECCIÓN ROBUSTA: Si estamos en Vercel O en modo producción
+    const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+
+    console.log("Generando PDF. Entorno Vercel/Prod detectado:", isVercel);
+
+    if (isVercel) {
+      // ☁️ MODO VERCEL
+      console.log("Usando @sparticuz/chromium...");
       const chromium = require('@sparticuz/chromium');
       const puppeteerCore = require('puppeteer-core');
 
-      // Optimización para que cargue rápido
+      // Forzar modo sin gráficos para que no pese tanto
       chromium.setGraphicsMode = false;
       
       browser = await puppeteerCore.launch({
@@ -130,8 +134,8 @@ export async function POST(req: Request) {
       });
 
     } else {
-      // 💻 MODO LOCAL (Desarrollo)
-      // Usamos el Puppeteer normal que descargaste en tu PC
+      // 💻 MODO LOCAL
+      console.log("Usando Puppeteer local...");
       const puppeteer = require('puppeteer');
       browser = await puppeteer.launch({
         headless: true,
@@ -140,18 +144,15 @@ export async function POST(req: Request) {
     }
 
     const page = await browser.newPage();
-    
-    // Cargamos el HTML y esperamos a que no haya tráfico de red (imágenes cargadas)
     await page.setContent(html, { waitUntil: 'networkidle0' });
     
     const pdfBuffer = await page.pdf({
       format: 'A4',
-      printBackground: true, // Para que salga el color azul del header
+      printBackground: true,
     });
 
     await browser.close();
 
-    // 5. Devolver el archivo PDF al navegador
     return new NextResponse(Buffer.from(pdfBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
@@ -160,8 +161,7 @@ export async function POST(req: Request) {
     });
 
   } catch (error: any) {
-    console.error("Error generando certificado:", error);
-    // Devolvemos el error en JSON para verlo en consola
+    console.error("Error FATAL generando certificado:", error);
     return NextResponse.json(
       { error: "Error al generar certificado", details: error.message },
       { status: 500 }
