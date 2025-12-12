@@ -2,12 +2,15 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 // ✅ Obtener todos los cursos
-export async function GET(req: Request, { params }: { params?: { id?: string } }) {
+export async function GET(req: Request) {
   try {
-    if (params?.id) {
+    const url = new URL(req.url);
+    const id = url.searchParams.get("id");
+
+    if (id) {
       // 🔹 Obtener un curso específico con docentes inscritos
       const curso = await prisma.curso.findUnique({
-        where: { id: params.id },
+        where: { id },
         include: {
           departamento: true,
           categoria: true,
@@ -106,8 +109,15 @@ export async function POST(req: Request) {
 }
 
 // ✅ Actualizar curso
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
+export async function PUT(req: Request) {
   try {
+    const url = new URL(req.url);
+    const id = url.searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "ID del curso es requerido" }, { status: 400 });
+    }
+
     const body = await req.json();
     const {
       nombre,
@@ -124,13 +134,13 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 
     // Traer las inscripciones actuales desde la BD
     const inscripcionesActuales = await prisma.inscripcionCurso.findMany({
-      where: { cursoId: params.id },
+      where: { cursoId: id },
       select: { id: true, userId: true, estado: true },
     });
 
     // Determinar diferencias
     const nuevos = docentesInscritos.filter(
-      (id: string) => !inscripcionesActuales.some((i) => i.userId === id)
+      (docId: string) => !inscripcionesActuales.some((i) => i.userId === docId)
     );
     const eliminados = inscripcionesActuales.filter(
       (i) => !docentesInscritos.includes(i.userId)
@@ -138,7 +148,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 
     // Actualizar curso (sin tocar las inscripciones)
     const cursoActualizado = await prisma.curso.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         nombre,
         descripcion,
@@ -163,13 +173,13 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       await prisma.inscripcionCurso.createMany({
         data: nuevos.map((userId: string) => ({
           userId,
-          cursoId: params.id,
-          estado: "INSCRITO", // default
+          cursoId: id,
+          estado: "INSCRITO",
         })),
       });
     }
 
-    // Actualizar estados de los que se enviaron en el body (mantener cambios manuales)
+    // Actualizar estados de los que se enviaron en el body
     for (const insc of inscripciones) {
       await prisma.inscripcionCurso.updateMany({
         where: { id: insc.id },
@@ -179,7 +189,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 
     // Retornar el curso con inscripciones actualizadas
     const cursoFinal = await prisma.curso.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         departamento: true,
         inscripciones: {
@@ -195,12 +205,18 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   }
 }
 
-
 // ✅ Eliminar curso
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(req: Request) {
   try {
-    await prisma.inscripcionCurso.deleteMany({ where: { cursoId: params.id } });
-    await prisma.curso.delete({ where: { id: params.id } });
+    const url = new URL(req.url);
+    const id = url.searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "ID del curso es requerido" }, { status: 400 });
+    }
+
+    await prisma.inscripcionCurso.deleteMany({ where: { cursoId: id } });
+    await prisma.curso.delete({ where: { id } });
 
     return NextResponse.json({ message: "Curso eliminado correctamente" });
   } catch (error) {
