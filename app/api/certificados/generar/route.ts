@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import puppeteer from "puppeteer";
+
+// IMPORTANTE: No importamos puppeteer aquí arriba para evitar errores en Vercel.
+// Lo haremos dinámicamente dentro de la función (líneas más abajo).
 
 export async function POST(req: Request) {
   try {
@@ -18,42 +20,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "certificadoId es requerido" }, { status: 400 });
     }
 
-    // Obtener datos del usuario
+    // 1. Obtener datos de la Base de Datos
     const usuario = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: {
-        name: true,
-        apellido: true,
-        rut: true,
-      }
+      select: { name: true, apellido: true, rut: true }
     });
 
-    if (!usuario) {
-      return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
-    }
+    if (!usuario) return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
 
-    // Obtener datos del certificado
     const certificado = await prisma.certificado.findUnique({
       where: { id: certificadoId }
     });
 
-    if (!certificado) {
-      return NextResponse.json({ error: "Certificado no encontrado" }, { status: 404 });
-    }
+    if (!certificado) return NextResponse.json({ error: "Certificado no encontrado" }, { status: 404 });
 
-    // Buscar el curso relacionado
     const curso = await prisma.curso.findFirst({
-      where: {
-        nombre: {
-          contains: certificado.titulo
-        }
-      },
-      include: {
-        departamento: true
-      }
+      where: { nombre: { contains: certificado.titulo } },
+      include: { departamento: true }
     });
 
-    // Datos para el certificado
+    // 2. Preparar variables para el Diploma
     const nombreCompleto = `${usuario.name || ''} ${usuario.apellido || ''}`.trim();
     const rut = usuario.rut || 'Sin RUT';
     const nombreCurso = curso?.nombre || certificado.titulo;
@@ -62,15 +48,13 @@ export async function POST(req: Request) {
     const duracion = curso?.duracion || 0;
     const modalidad = curso?.modalidad || 'Virtual';
 
-    // Fecha actual
     const fechaActual = new Date();
-    const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 
-                   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
     const dia = fechaActual.getDate();
     const mes = meses[fechaActual.getMonth()];
     const anioEmision = fechaActual.getFullYear();
 
-    // HTML del certificado (el mismo que antes)
+    // 3. HTML del certificado (Diseño UTEM Oficial)
     const html = `
 <!DOCTYPE html>
 <html lang="es">
@@ -78,111 +62,22 @@ export async function POST(req: Request) {
     <meta charset="UTF-8">
     <title>CONSTANCIA CURSO UTEM</title>
     <style>
-        body {
-            font-family: Arial, Helvetica, sans-serif; 
-            margin: 0;
-            padding: 0;
-            background-color: #ffffff; 
-        }
-        .certificado-a4 {
-            width: 210mm; 
-            height: 297mm; 
-            margin: 0;
-            padding: 0; 
-            box-sizing: border-box;
-            background-color: #ffffff;
-            position: relative;
-        }
-        .header {
-            text-align: center;
-            color: #ffffff;
-            background-color: #00688B; 
-            padding: 40px 0 20px 0;
-            position: relative;
-        }
-        .utem-nombre {
-            font-size: 1.2em;
-            font-weight: bold;
-            margin: 5px 0 5px 0;
-            letter-spacing: 5px;
-        }
-        .universidad-nombre {
-            font-family: Arial, Helvetica, sans-serif;
-            font-size: 2.2em;
-            line-height: 1.1;
-            font-weight: bold;
-            margin: 5px 0;
-            letter-spacing: 1px;
-        }
-        .estado-chile {
-            font-size: 1.0em;
-            font-style: italic;
-            margin: 10px 0 0 0;
-            padding-bottom: 20px;
-        }
-        .contenido {
-            padding: 40px 50px 20px 50px; 
-            text-align: center;
-            color: #333;
-        }
-        .titulo-constancia {
-            font-size: 2.5em;
-            font-weight: bold;
-            color: #000;
-            margin: 0 0 40px 0; 
-            display: block;
-        }
-        .texto-general {
-            font-size: 1.0em;
-            line-height: 1.6;
-            margin-bottom: 15px;
-            text-align: center;
-        }
-        .datos-persona, .nombre-curso {
-            font-size: 1.1em;
-            color: #000;
-            margin: 10px 0 20px 0; 
-            padding: 5px 0;
-            font-weight: bold; 
-        }
-        .nombre-curso {
-            font-style: normal; 
-            font-size: 1.2em; 
-        }
-        .footer {
-            position: absolute;
-            bottom: 50px; 
-            left: 50px;
-            right: 50px;
-            text-align: center;
-            color: #333;
-        }
-        .atentamente {
-            font-size: 1.0em;
-            margin: 50px 0 80px 0; 
-            text-align: center; 
-            display: block;
-        }
-        .firma-container {
-            width: 100%; 
-            text-align: center;
-            margin-bottom: 0;
-        }
-        .nombre-director {
-            font-size: 1.0em;
-            font-weight: bold;
-            margin: 0;
-        }
-        .cargo-director {
-            font-size: 1.0em;
-            margin: 5px 0 0 0;
-        }
-        .fecha-emision {
-            font-size: 0.8em; 
-            margin-top: 50px;
-            text-align: right; 
-            font-weight: normal;
-        }
+        body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 0; background-color: #ffffff; }
+        .certificado-a4 { width: 210mm; height: 297mm; margin: 0 auto; padding: 0; position: relative; }
+        .header { text-align: center; color: #ffffff; background-color: #00688B; padding: 40px 0 20px 0; -webkit-print-color-adjust: exact; }
+        .utem-nombre { font-size: 1.2em; font-weight: bold; letter-spacing: 5px; margin: 5px 0; }
+        .universidad-nombre { font-size: 2.2em; line-height: 1.1; font-weight: bold; margin: 5px 0; letter-spacing: 1px; }
+        .estado-chile { font-size: 1.0em; font-style: italic; margin: 10px 0 0 0; padding-bottom: 20px; }
+        .contenido { padding: 40px 50px 20px 50px; text-align: center; color: #333; }
+        .titulo-constancia { font-size: 2.5em; font-weight: bold; color: #000; margin: 0 0 40px 0; }
+        .texto-general { font-size: 1.0em; line-height: 1.6; margin-bottom: 15px; }
+        .datos-persona, .nombre-curso { font-size: 1.1em; color: #000; margin: 10px 0 20px 0; font-weight: bold; }
+        .nombre-curso { font-size: 1.2em; }
+        .footer { position: absolute; bottom: 50px; left: 50px; right: 50px; text-align: center; color: #333; }
+        .atentamente { font-size: 1.0em; margin: 50px 0 80px 0; }
+        .nombre-director { font-size: 1.0em; font-weight: bold; margin: 0; }
+        .cargo-director { font-size: 1.0em; margin: 5px 0 0 0; }
+        .fecha-emision { font-size: 0.8em; margin-top: 50px; text-align: right; }
     </style>
 </head>
 <body>
@@ -215,28 +110,49 @@ export async function POST(req: Request) {
 </html>
     `;
 
-    // Generar PDF con Puppeteer
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+    // 4. LÓGICA HÍBRIDA (EL TRUCO)
+    let browser;
+    
+    if (process.env.NODE_ENV === 'production') {
+      // ☁️ MODO VERCEL (Producción)
+      // Usamos el Chromium ligero especial para serverless
+      const chromium = require('@sparticuz/chromium');
+      const puppeteerCore = require('puppeteer-core');
+
+      // Optimización para que cargue rápido
+      chromium.setGraphicsMode = false;
+      
+      browser = await puppeteerCore.launch({
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath(),
+        headless: chromium.headless,
+      });
+
+    } else {
+      // 💻 MODO LOCAL (Desarrollo)
+      // Usamos el Puppeteer normal que descargaste en tu PC
+      const puppeteer = require('puppeteer');
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+    }
 
     const page = await browser.newPage();
+    
+    // Cargamos el HTML y esperamos a que no haya tráfico de red (imágenes cargadas)
     await page.setContent(html, { waitUntil: 'networkidle0' });
     
     const pdfBuffer = await page.pdf({
       format: 'A4',
-      printBackground: true,
-      margin: { top: '0mm', right: '0mm', bottom: '0mm', left: '0mm' }
+      printBackground: true, // Para que salga el color azul del header
     });
 
     await browser.close();
 
-    // Convertir a Buffer
-    const buffer = Buffer.from(pdfBuffer);
-
-    // Devolver el PDF
-    return new NextResponse(buffer, {
+    // 5. Devolver el archivo PDF al navegador
+    return new NextResponse(Buffer.from(pdfBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="Certificado_${nombreCompleto.replace(/\s+/g, '_')}.pdf"`
@@ -245,6 +161,7 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     console.error("Error generando certificado:", error);
+    // Devolvemos el error en JSON para verlo en consola
     return NextResponse.json(
       { error: "Error al generar certificado", details: error.message },
       { status: 500 }
