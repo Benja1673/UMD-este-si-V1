@@ -19,13 +19,12 @@ export const EstadoCurso = {
 
 /**
  * Calcula el nivel actual de un docente basado en sus cursos aprobados
- * Lógica: Para completar un nivel, debe aprobar al menos un curso de cada categoría obligatoria del nivel
  */
 export async function calcularNivelDocente(docenteId: string): Promise<keyof typeof NivelCurso | null> {
   // Obtener todas las inscripciones aprobadas del docente
   const cursosAprobados = await prisma.inscripcionCurso.findMany({
     where: {
-      docenteId,
+      userId: docenteId, // ✅ CORRECTO: Usamos userId
       estado: EstadoCurso.APROBADO,
     },
     include: {
@@ -74,7 +73,6 @@ export async function calcularNivelDocente(docenteId: string): Promise<keyof typ
     categoriasAprobadas.has(categoria.id),
   )
 
-  // Para nivel avanzado, debe tener todas las categorías de avanzado Y haber completado intermedio
   if (categoriasAvanzadasAprobadas.length === categoriasAvanzadasRequeridas.length) {
     // Verificar que también tenga completo el nivel intermedio
     const categoriasIntermediasRequeridas = categoriasPorNivel[NivelCurso.INTERMEDIO]
@@ -107,9 +105,11 @@ export async function calcularNivelDocente(docenteId: string): Promise<keyof typ
 export async function actualizarNivelDocente(docenteId: string): Promise<keyof typeof NivelCurso | null> {
   const nuevoNivel = await calcularNivelDocente(docenteId)
 
-  await prisma.docente.update({
+  // ⚠️ CAMBIO CRÍTICO: Usamos prisma.user en lugar de prisma.docente
+  // para ser consistentes con el resto de tu sistema
+  await prisma.user.update({
     where: { id: docenteId },
-    data: { nivelActual: nuevoNivel },
+    data: { nivelActual: nuevoNivel }, 
   })
 
   return nuevoNivel
@@ -148,8 +148,8 @@ export async function puedeInscribirseACurso(
   // Verificar si ya está inscrito
   const inscripcionExistente = await prisma.inscripcionCurso.findUnique({
     where: {
-      docenteId_cursoId: {
-        docenteId,
+      userId_cursoId: {
+        userId: docenteId, // ✅ CORRECTO
         cursoId,
       },
     },
@@ -163,7 +163,7 @@ export async function puedeInscribirseACurso(
   if (curso.prerrequisitos.length > 0) {
     const cursosAprobados = await prisma.inscripcionCurso.findMany({
       where: {
-        docenteId,
+        userId: docenteId, // ✅ CORRECTO
         estado: EstadoCurso.APROBADO,
       },
       include: {
@@ -203,7 +203,7 @@ export async function puedeInscribirseACurso(
 export async function obtenerProgresoDocente(docenteId: string) {
   const cursosAprobados = await prisma.inscripcionCurso.findMany({
     where: {
-      docenteId,
+      userId: docenteId, // ✅ CORRECTO
       estado: EstadoCurso.APROBADO,
     },
     include: {
