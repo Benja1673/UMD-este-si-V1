@@ -1,3 +1,4 @@
+// lib/auth.ts
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
@@ -20,15 +21,15 @@ export const authOptions: NextAuthOptions = {
 
         if (!user) return null;
 
-        // Mantenemos tu lógica específica de hashedPassword
+        // Tu lógica exacta de hashedPassword
         const isValid = await bcrypt.compare(
           credentials!.password,
-          user.hashedPassword
+          user.hashedPassword 
         );
 
         if (!isValid) return null;
 
-        // ✅ Incluir id, email y role
+        // ✅ Retornamos id, email, role, etc.
         return { 
           id: user.id, 
           email: user.email, 
