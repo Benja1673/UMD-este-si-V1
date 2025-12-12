@@ -4,12 +4,13 @@ import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 
 interface ProfilePageProps {
-  params: {
-    id: string // coincidir con [id] de la carpeta
-  }
+  params: Promise<{ id: string }>
 }
 
-export default async function ProfilePage({ params }: ProfilePageProps) {
+export default async function ProfilePage(props: ProfilePageProps) {
+  const params = await props.params
+  const { id } = params
+
   const session = await getServerSession(authOptions)
 
   if (!session?.user?.email) {
@@ -30,9 +31,9 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
     )
   }
 
-  // Buscar docente por id (params.id)
+  // Buscar docente por id
   const userDb = await prisma.user.findUnique({
-    where: { id: params.id },
+    where: { id: id },
     include: {
       inscripciones: { include: { curso: { include: { categoria: true } } } },
       departamento: true,
