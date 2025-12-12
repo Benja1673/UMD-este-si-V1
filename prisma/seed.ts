@@ -108,7 +108,7 @@ async function main() {
       descripcion: "Curso introductorio al modelo educativo",
       categoriaId: categorias[0].id,
       departamentoId: departamentos[0].id,
-      instructorId: usuarios[0].id, // Juan Pérez
+      instructor: usuarios[0].id, // <- cambiado: ahora es solo el id
       codigo: "CURSO-001",
     },
   });
@@ -121,7 +121,7 @@ async function main() {
       descripcion: "Curso de álgebra avanzada",
       categoriaId: categorias[1].id,
       departamentoId: departamentos[1].id,
-      instructorId: usuarios[1].id, // María Gómez
+      instructor: usuarios[1].id, // <- cambiado: ahora es solo el id
       codigo: "CURSO-002",
     },
   });
