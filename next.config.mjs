@@ -1,14 +1,21 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,
+  // Configuración para permitir librerías de servidor en Vercel (PDFs)
+  experimental: {
+    serverComponentsExternalPackages: ['puppeteer-core', '@sparticuz/chromium'],
   },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
+  
+  // Si en el futuro necesitas agregar dominios de imágenes externas, irían aquí:
+  /*
   images: {
-    unoptimized: true,
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'example.com',
+      },
+    ],
   },
-}
+  */
+};
 
-export default nextConfig
+export default nextConfig;
