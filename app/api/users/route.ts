@@ -1,8 +1,10 @@
 // app/api/users/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import bcrypt from "bcryptjs"; //
-import nodemailer from "nodemailer"; //
+import nodemailer from "nodemailer" //
 
 // Helper function to generate a random temporary password
 function generateRandomPassword(length = 10) {
@@ -56,15 +58,36 @@ async function sendTemporaryPasswordEmail(toEmail: string, temporaryPassword: st
 // GET - Obtener docentes (con paginación opcional)
 export async function GET(request: Request) {
   try {
+    const session = await getServerSession(authOptions);
+    const requesterRole = session?.user?.role?.toUpperCase();
+
+    if (!requesterRole || requesterRole === "DOCENTE") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const page = searchParams.get("page");
     const limit = searchParams.get("limit");
     const search = searchParams.get("search");
 
+    // REGLA DE VISIBILIDAD:
+    const rolesVisibles = requesterRole === "ADMIN" ? ["supervisor", "docente"] : ["docente"];
+    const baseWhere: any = { role: { in: rolesVisibles } };
+
     // Si NO hay parámetros de paginación, devuelve TODO (compatibilidad)
     if (!page && !limit) {
-      const docentes = await prisma.user.findMany({
-        where: { role: "docente" },
+      const whereClause: any = { ...baseWhere };
+      if (search) {
+        whereClause.OR = [
+          { name: { contains: search, mode: "insensitive" } },
+          { apellido: { contains: search, mode: "insensitive" } },
+          { email: { contains: search, mode: "insensitive" } },
+          { rut: { contains: search, mode: "insensitive" } },
+        ];
+      }
+
+      const usuarios = await prisma.user.findMany({
+        where: whereClause,
         select: {
           id: true,
           name: true,
@@ -108,8 +131,8 @@ export async function GET(request: Request) {
         orderBy: { apellido: "asc" },
       });
 
-      console.log(`📊 Total docentes encontrados: ${docentes.length}`);
-      return NextResponse.json(docentes, { status: 200 });
+      console.log(`📊 Total usuarios encontrados: ${usuarios.length}`);
+      return NextResponse.json(usuarios, { status: 200 });
     }
 
     // 🆕 CON PAGINACIÓN
@@ -117,9 +140,7 @@ export async function GET(request: Request) {
     const limitNum = parseInt(limit || "50");
     const skip = (pageNum - 1) * limitNum;
 
-    // Construir filtro de búsqueda
-    const whereClause: any = { role: "docente" };
-    
+    const whereClause: any = { ...baseWhere };
     if (search) {
       whereClause.OR = [
         { name: { contains: search, mode: "insensitive" } },
@@ -129,11 +150,11 @@ export async function GET(request: Request) {
       ];
     }
 
-    // Contar total de docentes (para calcular páginas)
+    // Contar total de usuarios (para calcular páginas)
     const total = await prisma.user.count({ where: whereClause });
 
-    // Obtener docentes paginados
-    const docentes = await prisma.user.findMany({
+    // Obtener usuarios paginados
+    const usuarios = await prisma.user.findMany({
       where: whereClause,
       select: {
         id: true,
@@ -180,10 +201,10 @@ export async function GET(request: Request) {
       take: limitNum,
     });
 
-    console.log(`📊 Página ${pageNum}: ${docentes.length} de ${total} docentes`);
+    console.log(`📊 Página ${pageNum}: ${usuarios.length} de ${total} usuarios`);
 
     return NextResponse.json({
-      data: docentes,
+      data: usuarios,
       pagination: {
         total,
         page: pageNum,
@@ -193,9 +214,9 @@ export async function GET(request: Request) {
     }, { status: 200 });
     
   } catch (error) {
-    console.error("❌ Error al traer docentes:", error);
+    console.error("❌ Error al traer usuarios:", error);
     return NextResponse.json(
-      { error: "No se pudieron cargar los docentes" },
+      { error: "No se pudieron cargar los usuarios" },
       { status: 500 }
     );
   }
@@ -204,8 +225,17 @@ export async function GET(request: Request) {
 // POST - Crear un nuevo docente
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
-    const { nombre, apellido, rut, email, telefono, departamentoId, departamento, direccion, fechaNacimiento, especialidad, role } = body;
+    const session = await getServerSession(authOptions);
+    const requesterRole = session?.user?.role?.toUpperCase();
+
+    const body = await request.json();
+    const { nombre, apellido, rut, email, telefono, departamentoId, departamento, direccion, fechaNacimiento, especialidad } = body;
+    const targetRole = body.role?.toLowerCase() || "docente";
+
+    // SEGURIDAD: Solo ADMIN crea supervisores
+    if (targetRole === "supervisor" && requesterRole !== "ADMIN") {
+      return NextResponse.json({ error: "Solo administradores pueden crear supervisores" }, { status: 403 });
+    }
     // Se ignora la 'password' del body para forzar la clave temporal.
 
     // Validaciones básicas
@@ -258,7 +288,7 @@ export async function POST(request: Request) {
         email: email,
         telefono: telefono || null,
         hashedPassword: hashedPassword, // Usar la clave hasheada
-        role: role || "docente",
+        role: targetRole || "docente",
         especialidad: especialidad || null,
         estado: "ACTIVO",
         departamentoId: departamentoIdFinal,
@@ -293,6 +323,9 @@ export async function POST(request: Request) {
 // PUT - Actualizar un docente existente
 export async function PUT(request: Request) {
   try {
+    const session = await getServerSession(authOptions);
+    const requesterRole = session?.user?.role?.toUpperCase();
+
     const body = await request.json();
     const { id, nombre, apellido, rut, email, telefono, departamentoId, departamento, direccion, fechaNacimiento, especialidad, estado, role, resetPassword } = body; // Añadir 'resetPassword'
 
@@ -314,6 +347,10 @@ export async function PUT(request: Request) {
         { error: "Docente no encontrado" },
         { status: 404 }
       );
+    }
+    // REGLA: Un SUPERVISOR no puede editar a otro SUPERVISOR
+    if (docenteExistente && (docenteExistente as any).role === "supervisor" && requesterRole !== "ADMIN") {
+      return NextResponse.json({ error: "No tienes permiso para editar supervisores" }, { status: 403 });
     }
     
     // --- Lógica de restablecimiento de contraseña en PUT ---
