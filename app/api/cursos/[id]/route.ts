@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth"
+import { authOptions, isAdminOrSupervisor } from "@/lib/auth"
 
 // ✅ Obtener curso específico o todos los cursos
 export async function GET(
@@ -66,6 +68,12 @@ export async function GET(
 // ✅ Crear un curso
 export async function POST(req: Request) {
   try {
+    const session = await getServerSession(authOptions)
+
+    // BLINDAJE: Si no es Admin ni Supervisor, bloqueamos la acción
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para crear cursos" }, { status: 403 })
+    }
     const body = await req.json();
     const {
       nombre,
@@ -124,6 +132,12 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getServerSession(authOptions)
+
+    // BLINDAJE: Si no es Admin ni Supervisor, bloqueamos la acción
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para editar cursos" }, { status: 403 })
+    }
     const resolvedParams = await params;
     const cursoId = resolvedParams.id;
 
@@ -259,6 +273,13 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getServerSession(authOptions)
+
+    // BLINDAJE: Si no es Admin ni Supervisor, bloqueamos la acción
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para eliminar cursos" }, { status: 403 })
+    }
+
     const resolvedParams = await params;
     const cursoId = resolvedParams.id;
 

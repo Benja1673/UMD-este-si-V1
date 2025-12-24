@@ -1,5 +1,8 @@
+// app/api/sistemas/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth/next"; // Importación para la sesión
+import { authOptions } from "@/lib/auth";           // Importación de tus opciones
 
 // GET - Obtener solo sistemas (modalidad="sistema")
 export async function GET() {
@@ -18,6 +21,16 @@ export async function GET() {
 // POST - Crear sistema (modalidad="sistema")
 export async function POST(req: Request) {
   try {
+    // 🛡️ INICIO BLINDAJE DE SEGURIDAD
+    const session = await getServerSession(authOptions);
+    const role = session?.user?.role?.toUpperCase();
+
+    if (role !== "ADMIN" && role !== "SUPERVISOR") {
+      console.warn(`🚫 Intento de creación de sistema no autorizado por: ${session?.user?.email || "Anónimo"}`);
+      return NextResponse.json({ error: "No tienes permisos para crear sistemas" }, { status: 403 });
+    }
+    // 🛡️ FIN BLINDAJE
+
     const body = await req.json();
     const { titulo, descripcion, ubicacion } = body;
 
@@ -49,6 +62,15 @@ export async function POST(req: Request) {
 // PUT - Actualizar sistema
 export async function PUT(req: Request) {
   try {
+    // 🛡️ INICIO BLINDAJE DE SEGURIDAD
+    const session = await getServerSession(authOptions);
+    const role = session?.user?.role?.toUpperCase();
+
+    if (role !== "ADMIN" && role !== "SUPERVISOR") {
+      return NextResponse.json({ error: "No tienes permisos para actualizar sistemas" }, { status: 403 });
+    }
+    // 🛡️ FIN BLINDAJE
+
     const body = await req.json();
     const { id, titulo, descripcion, ubicacion } = body;
 
@@ -85,6 +107,15 @@ export async function PUT(req: Request) {
 // DELETE - Eliminar sistema
 export async function DELETE(req: Request) {
   try {
+    // 🛡️ INICIO BLINDAJE DE SEGURIDAD
+    const session = await getServerSession(authOptions);
+    const role = session?.user?.role?.toUpperCase();
+
+    if (role !== "ADMIN" && role !== "SUPERVISOR") {
+      return NextResponse.json({ error: "No tienes permisos para eliminar sistemas" }, { status: 403 });
+    }
+    // 🛡️ FIN BLINDAJE
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 

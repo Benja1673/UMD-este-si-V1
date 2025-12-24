@@ -67,3 +67,9 @@ export const authOptions: NextAuthOptions = {
     },
   },
 };
+
+// Helper para verificar si la sesión pertenece a un admin o supervisor
+export async function isAdminOrSupervisor(session: any) {
+  const role = session?.user?.role?.toString().toUpperCase();
+  return role === "ADMIN" || role === "SUPERVISOR";
+}

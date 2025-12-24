@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useSession } from "next-auth/react"
 import Link from "next/link"
 import {
   Table,
@@ -78,6 +79,7 @@ const ITEMS_POR_PAGINA = 50
 
 export default function Page() {
   const { toast } = useToast()
+  const { data: session } = useSession()
   const [users, setUsers] = useState<User[]>([])
   const [usersFiltrados, setUsersFiltrados] = useState<User[]>([])
   const [busqueda, setBusqueda] = useState("")
@@ -670,12 +672,18 @@ export default function Page() {
 
                     {/* Acciones */}
                     <TableCell className="border border-gray-200 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => handleEditarDocente(docente)}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleEliminarDialogo(docente)}>
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
+                      {(docente.role !== "supervisor" || session?.user?.role?.toLowerCase() === "admin") ? (
+                        <>
+                          <Button variant="ghost" size="sm" onClick={() => handleEditarDocente(docente)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleEliminarDialogo(docente)}>
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="text-sm text-gray-500">—</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))
@@ -856,7 +864,9 @@ export default function Page() {
                 </SelectTrigger>
                 <SelectContent className="bg-white shadow-md">
                   <SelectItem value="docente">Docente</SelectItem>
-                  <SelectItem value="supervisor">Supervisor</SelectItem>
+                  {session?.user?.role?.toLowerCase() === "admin" && (
+                    <SelectItem value="supervisor">Supervisor</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>

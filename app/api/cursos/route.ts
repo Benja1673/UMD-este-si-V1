@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions, isAdminOrSupervisor } from "@/lib/auth";
 
 // ✅ Obtener todos los cursos
 export async function GET(req: Request) {
@@ -62,6 +64,12 @@ export async function GET(req: Request) {
 // ✅ Crear un curso
 export async function POST(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+
+    // BLINDAJE: solo Admin o Supervisor pueden crear cursos
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para crear cursos" }, { status: 403 });
+    }
     const body = await req.json();
     const {
       nombre,
@@ -111,6 +119,12 @@ export async function POST(req: Request) {
 // ✅ Actualizar curso
 export async function PUT(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+
+    // BLINDAJE: solo Admin o Supervisor pueden actualizar cursos
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para editar cursos" }, { status: 403 });
+    }
     const url = new URL(req.url);
     const id = url.searchParams.get("id");
 
@@ -208,6 +222,13 @@ export async function PUT(req: Request) {
 // ✅ Eliminar curso
 export async function DELETE(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+
+    // BLINDAJE: solo Admin o Supervisor pueden eliminar cursos
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para eliminar cursos" }, { status: 403 });
+    }
+
     const url = new URL(req.url);
     const id = url.searchParams.get("id");
 

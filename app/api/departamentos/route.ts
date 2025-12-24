@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getServerSession } from "next-auth"
+import { authOptions, isAdminOrSupervisor } from "@/lib/auth"
 
 export async function GET() {
   try {
@@ -16,6 +18,13 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const session = await getServerSession(authOptions)
+
+    // BLINDAJE: solo Admin o Supervisor pueden crear departamentos
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para crear departamentos" }, { status: 403 })
+    }
+
     const body = await req.json()
     const nombre = (body.nombre || "").trim()
     if (!nombre) return NextResponse.json({ error: "Nombre requerido" }, { status: 400 })

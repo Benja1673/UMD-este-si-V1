@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { authOptions, isAdminOrSupervisor } from "@/lib/auth";
 import bcrypt from "bcryptjs"; //
 import nodemailer from "nodemailer" //
 
@@ -228,6 +228,11 @@ export async function POST(request: Request) {
     const session = await getServerSession(authOptions);
     const requesterRole = session?.user?.role?.toUpperCase();
 
+    // BLINDAJE: solo ADMIN o SUPERVISOR pueden crear usuarios
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
+    }
+
     const body = await request.json();
     const { nombre, apellido, rut, email, telefono, departamentoId, departamento, direccion, fechaNacimiento, especialidad } = body;
     const targetRole = body.role?.toLowerCase() || "docente";
@@ -336,10 +341,10 @@ export async function PUT(request: Request) {
       );
     }
 
-    // Verificar que el docente existe
+    // Verificar que el docente existe (incluye role para reglas)
     const docenteExistente = await prisma.user.findUnique({
       where: { id: id },
-      select: { id: true, email: true, hashedPassword: true, name: true, apellido: true }
+      select: { id: true, email: true, hashedPassword: true, name: true, apellido: true, role: true }
     });
 
     if (!docenteExistente) {
@@ -349,7 +354,7 @@ export async function PUT(request: Request) {
       );
     }
     // REGLA: Un SUPERVISOR no puede editar a otro SUPERVISOR
-    if (docenteExistente && (docenteExistente as any).role === "supervisor" && requesterRole !== "ADMIN") {
+    if (docenteExistente && (docenteExistente as any).role?.toString().toUpperCase() === "SUPERVISOR" && requesterRole !== "ADMIN") {
       return NextResponse.json({ error: "No tienes permiso para editar supervisores" }, { status: 403 });
     }
     
@@ -464,6 +469,14 @@ export async function PUT(request: Request) {
 // DELETE - Eliminar un docente
 export async function DELETE(request: Request) {
   try {
+    const session = await getServerSession(authOptions);
+    const requesterRole = session?.user?.role?.toUpperCase();
+
+    // BLINDAJE: solo ADMIN o SUPERVISOR pueden eliminar usuarios
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
@@ -474,10 +487,10 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // Verificar que el docente existe
+    // Verificar que el docente existe (incluye role para reglas)
     const docenteExistente = await prisma.user.findUnique({
       where: { id: id },
-      select: { name: true, apellido: true }
+      select: { name: true, apellido: true, role: true }
     });
 
     if (!docenteExistente) {
@@ -485,6 +498,11 @@ export async function DELETE(request: Request) {
         { error: "Docente no encontrado" },
         { status: 404 }
       );
+    }
+
+    // REGLA: Un SUPERVISOR no puede eliminar a otro SUPERVISOR
+    if ((docenteExistente as any).role?.toString().toUpperCase() === "SUPERVISOR" && requesterRole !== "ADMIN") {
+      return NextResponse.json({ error: "No tienes permiso para eliminar supervisores" }, { status: 403 });
     }
 
     // Eliminar el docente

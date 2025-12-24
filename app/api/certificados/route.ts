@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions, isAdminOrSupervisor } from "@/lib/auth";
 
 // GET - Obtener todos los certificados
 export async function GET() {
@@ -27,6 +29,13 @@ export async function GET() {
 // POST - Crear certificado
 export async function POST(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+
+    // BLINDAJE: solo Admin o Supervisor pueden crear certificados
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para crear certificados" }, { status: 403 });
+    }
+
     const body = await req.json();
     const { titulo, descripcion } = body;
 
@@ -64,6 +73,13 @@ export async function POST(req: Request) {
 // PUT - Actualizar certificado
 export async function PUT(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+
+    // BLINDAJE: solo Admin o Supervisor pueden actualizar certificados
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para actualizar certificados" }, { status: 403 });
+    }
+
     const body = await req.json();
     const { id, titulo, descripcion } = body;
 
@@ -98,6 +114,13 @@ export async function PUT(req: Request) {
 // DELETE - Eliminar certificado
 export async function DELETE(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+
+    // BLINDAJE: solo Admin o Supervisor pueden eliminar certificados
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para eliminar certificados" }, { status: 403 });
+    }
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 

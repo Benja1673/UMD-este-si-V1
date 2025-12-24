@@ -1,5 +1,8 @@
+// app/api/evaluaciones/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth/next"; // Importación necesaria para la sesión
+import { authOptions } from "@/lib/auth";           // Importación de tus opciones de auth
 
 // GET - Obtener todas las evaluaciones
 export async function GET() {
@@ -22,6 +25,16 @@ export async function GET() {
 // POST - Crear evaluación
 export async function POST(req: Request) {
   try {
+    // 🛡️ INICIO BLINDAJE DE SEGURIDAD
+    const session = await getServerSession(authOptions);
+    const role = session?.user?.role?.toUpperCase();
+
+    if (role !== "ADMIN" && role !== "SUPERVISOR") {
+      console.warn(`🚫 Intento de creación no autorizado por: ${session?.user?.email || "Anónimo"}`);
+      return NextResponse.json({ error: "No tienes permisos para crear evaluaciones" }, { status: 403 });
+    }
+    // 🛡️ FIN BLINDAJE
+
     const body = await req.json();
     const { titulo, link } = body;
 
@@ -34,7 +47,7 @@ export async function POST(req: Request) {
     const nueva = await prisma.evaluacion.create({
       data: {
         titulo: titulo.trim(),
-        descripcion: link || "", // ✅ Link se guarda en descripcion
+        descripcion: link || "", 
         tipo: "EVALUACION",
         fechaInicio: new Date(),
         fechaFin: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 año
@@ -47,7 +60,6 @@ export async function POST(req: Request) {
     return NextResponse.json(nueva, { status: 201 });
   } catch (error: any) {
     console.error("❌ Error al crear evaluación:", error);
-    console.error("Stack:", error.stack);
     return NextResponse.json({ 
       error: "Error al crear evaluación", 
       details: error.message,
@@ -59,6 +71,15 @@ export async function POST(req: Request) {
 // PUT - Actualizar evaluación
 export async function PUT(req: Request) {
   try {
+    // 🛡️ INICIO BLINDAJE DE SEGURIDAD
+    const session = await getServerSession(authOptions);
+    const role = session?.user?.role?.toUpperCase();
+
+    if (role !== "ADMIN" && role !== "SUPERVISOR") {
+      return NextResponse.json({ error: "No tienes permisos para editar evaluaciones" }, { status: 403 });
+    }
+    // 🛡️ FIN BLINDAJE
+
     const body = await req.json();
     const { id, titulo, link } = body;
 
@@ -76,7 +97,7 @@ export async function PUT(req: Request) {
       where: { id: id },
       data: {
         titulo: titulo.trim(),
-        descripcion: link || "", // ✅ Link se guarda en descripcion
+        descripcion: link || "", 
       },
     });
 
@@ -84,7 +105,6 @@ export async function PUT(req: Request) {
     return NextResponse.json(actualizada);
   } catch (error: any) {
     console.error("❌ Error al actualizar evaluación:", error);
-    console.error("Stack:", error.stack);
     return NextResponse.json({ 
       error: "Error al actualizar", 
       details: error.message,
@@ -96,6 +116,15 @@ export async function PUT(req: Request) {
 // DELETE - Eliminar evaluación
 export async function DELETE(req: Request) {
   try {
+    // 🛡️ INICIO BLINDAJE DE SEGURIDAD
+    const session = await getServerSession(authOptions);
+    const role = session?.user?.role?.toUpperCase();
+
+    if (role !== "ADMIN" && role !== "SUPERVISOR") {
+      return NextResponse.json({ error: "No tienes permisos para eliminar evaluaciones" }, { status: 403 });
+    }
+    // 🛡️ FIN BLINDAJE
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
@@ -110,7 +139,6 @@ export async function DELETE(req: Request) {
     });
 
     if (!evaluacion) {
-      console.log("⚠️ Evaluación no encontrada:", id);
       return NextResponse.json({ error: "Evaluación no encontrada" }, { status: 404 });
     }
 
@@ -119,7 +147,6 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ message: "Evaluación eliminada correctamente" });
   } catch (error: any) {
     console.error("❌ Error al eliminar:", error);
-    console.error("Stack:", error.stack);
     return NextResponse.json({ 
       error: "Error al eliminar", 
       details: error.message,

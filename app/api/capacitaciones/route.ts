@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions, isAdminOrSupervisor } from "@/lib/auth";
 
 // GET - Obtener solo capacitaciones (modalidad="capacitacion")
 export async function GET() {
@@ -18,6 +20,13 @@ export async function GET() {
 // POST - Crear capacitación (modalidad="capacitacion")
 export async function POST(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+
+    // BLINDAJE: solo Admin o Supervisor pueden crear capacitaciones
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para crear capacitaciones" }, { status: 403 });
+    }
+
     const body = await req.json();
     const { titulo, descripcion, ubicacion } = body;
 
@@ -49,6 +58,13 @@ export async function POST(req: Request) {
 // PUT - Actualizar capacitación
 export async function PUT(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+
+    // BLINDAJE: solo Admin o Supervisor pueden actualizar capacitaciones
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para editar capacitaciones" }, { status: 403 });
+    }
+
     const body = await req.json();
     const { id, titulo, descripcion, ubicacion } = body;
 
@@ -85,6 +101,13 @@ export async function PUT(req: Request) {
 // DELETE - Eliminar capacitación
 export async function DELETE(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+
+    // BLINDAJE: solo Admin o Supervisor pueden eliminar capacitaciones
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para eliminar capacitaciones" }, { status: 403 });
+    }
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 

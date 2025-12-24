@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions, isAdminOrSupervisor } from "@/lib/auth";
 
 // ✅ GET - Listar condiciones
 export async function GET(req: Request) {
@@ -36,6 +38,13 @@ export async function GET(req: Request) {
 // ✅ POST - Crear una nueva condición
 export async function POST(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+
+    // BLINDAJE: solo Admin o Supervisor pueden crear condiciones
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para crear condiciones" }, { status: 403 });
+    }
+
     const body = await req.json();
     let { servicioId, servicioTipo, estadoRequerido, esGeneral } = body;
     let cursoId = body.cursoId;
@@ -100,6 +109,13 @@ export async function POST(req: Request) {
 // ✅ PUT - Actualizar una condición
 export async function PUT(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+
+    // BLINDAJE: solo Admin o Supervisor pueden actualizar condiciones
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para actualizar condiciones" }, { status: 403 });
+    }
+
     const body = await req.json();
     let { id, estadoRequerido, esGeneral } = body;
     let cursoId = body.cursoId;
@@ -136,6 +152,13 @@ export async function PUT(req: Request) {
 // ✅ DELETE - Eliminar una condición
 export async function DELETE(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+
+    // BLINDAJE: solo Admin o Supervisor pueden eliminar condiciones
+    if (!session || !(await isAdminOrSupervisor(session))) {
+      return NextResponse.json({ error: "No tienes permisos para eliminar condiciones" }, { status: 403 });
+    }
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
