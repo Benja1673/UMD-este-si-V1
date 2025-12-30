@@ -12,14 +12,24 @@ export default function CursoPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    // Si no hay ID en los parámetros, no intentamos buscar
+    if (!params.id) return
+
     const fetchCurso = async () => {
       try {
+        setLoading(true)
         const res = await fetch(`/api/cursos/${params.id}`)
-        if (!res.ok) throw new Error("Curso no encontrado")
+        
+        // Manejo específico para el Soft Delete (la API devuelve 404 si deletedAt no es null)
+        if (res.status === 404) {
+          throw new Error("El curso no existe o ha sido eliminado del sistema.")
+        }
+        
+        if (!res.ok) throw new Error("Error al cargar la información del curso")
 
         const data = await res.json()
 
-        // 🔹 Adaptar los datos del curso
+        // 🔹 Adaptar los datos del curso incluyendo el nuevo estado 'activo'
         setCurso({
           id: data.id,
           codigo: data.codigo ?? "",
@@ -31,17 +41,19 @@ export default function CursoPage() {
           tipo: data.tipo ?? "",
           ano: data.ano ?? new Date().getFullYear(),
           departamento: data.departamento?.nombre ?? "",
-          estado: data.activo ? "Activo" : "Inactivo",
+          estado: data.activo ? "Activo" : "Inactivo", // ✅ Refleja el estado real en DB
         })
 
-        // 🔹 Adaptar los docentes con estado de inscripción
-        const docentesAdaptados: Docente[] = data.inscripciones.map((i: any) => ({
+        // 🔹 Adaptar los docentes
+        // Gracias a que la API ya filtra { where: { deletedAt: null } }, 
+        // aquí solo recibiremos inscripciones vivas.
+        const docentesAdaptados: Docente[] = (data.inscripciones || []).map((i: any) => ({
           id: i.usuario.id,
           nombre: `${i.usuario.name ?? ""} ${i.usuario.apellido ?? ""}`.trim(),
           rut: i.usuario.rut ?? "",
           email: i.usuario.email ?? "",
           departamento: i.usuario.departamento?.nombre ?? "",
-          estadoInscripcion: i.estado ?? "Pendiente", // 👈 se agrega este campo
+          estadoInscripcion: i.estado ?? "Pendiente",
         }))
 
         setDocentes(docentesAdaptados)
@@ -55,9 +67,22 @@ export default function CursoPage() {
     fetchCurso()
   }, [params.id])
 
-  if (loading) return <div className="p-6">Cargando curso...</div>
-  if (error) return <div className="p-6 text-red-600">{error}</div>
-  if (!curso) return <div className="p-6 text-red-600">Curso no encontrado</div>
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-[400px]">
+      <div className="text-gray-500 animate-pulse">Cargando detalles del curso...</div>
+    </div>
+  )
 
+  if (error) return (
+    <div className="p-6">
+      <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+        <strong>Error:</strong> {error}
+      </div>
+    </div>
+  )
+
+  if (!curso) return <div className="p-6 text-gray-500">No se encontró el curso.</div>
+
+  // Renderizamos el card con la data blindada
   return <CursoCard curso={curso} docentes={docentes} />
 }

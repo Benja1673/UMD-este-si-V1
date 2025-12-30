@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react"
 import Link from "next/link"
-import { Plus, Search, X, PinIcon, Filter, ChevronDown, Edit, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
+import { Plus, Search, X, PinIcon, Filter, ChevronDown, Edit, Trash2, ChevronLeft, ChevronRight, CheckCircle2, XCircle } from "lucide-react"
 import BreadcrumbNav from "@/components/breadcrumb-nav"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 type Curso = {
-  id: number
+  id: string
   codigo: string
   nivel: "Inicial" | "Intermedio" | "Avanzado"
   categoria: string
@@ -25,6 +25,7 @@ type Curso = {
   rut: string
   correo: string
   departamento: string
+  activo: boolean
 }
 
 const ITEMS_POR_PAGINA = 50
@@ -37,12 +38,14 @@ export default function GestionCursosPage() {
   const [busqueda, setBusqueda] = useState("")
   const [filtroDepto, setFiltroDepto] = useState<string>("todos")
   const [filtroNivel, setFiltroNivel] = useState<string>("todos")
+  const [filtroEstado, setFiltroEstado] = useState<string>("activos")
   const [cabecerasFijadas, setCabecerasFijadas] = useState(false)
   const [paginaActual, setPaginaActual] = useState(1)
 
   const [cursoActual, setCursoActual] = useState<Curso | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false) // Corregido: antes estaba duplicada la declaración aquí
+  
   const [formData, setFormData] = useState({
     codigo: "",
     nivel: "Inicial" as "Inicial" | "Intermedio" | "Avanzado",
@@ -65,7 +68,7 @@ export default function GestionCursosPage() {
   useEffect(() => {
     const fetchCursos = async () => {
       try {
-        const res = await fetch("/api/cursos")
+        const res = await fetch("/api/cursos?estado=todos")
         if (!res.ok) throw new Error("Error al obtener los cursos")
         const data = await res.json()
 
@@ -73,7 +76,7 @@ export default function GestionCursosPage() {
           id: c.id,
           codigo: c.codigo ?? "",
           nivel: c.nivel ?? "Inicial",
-          categoria: c.categoria ?? "",
+          categoria: c.categoria?.nombre ?? "",
           curso: c.nombre ?? "",
           descripcion: c.descripcion ?? "",
           cupos: c.cupos ?? 0,
@@ -82,6 +85,7 @@ export default function GestionCursosPage() {
           rut: c.rut ?? "",
           correo: c.correo ?? "",
           departamento: c.departamento?.nombre ?? "",
+          activo: c.activo === true,
         }))
 
         setCursos(adaptados)
@@ -103,10 +107,10 @@ export default function GestionCursosPage() {
       resultado = resultado.filter(
         (c) =>
           c.curso.toLowerCase().includes(busquedaLower) ||
+          c.codigo.toLowerCase().includes(busquedaLower) ||
           c.rut.toLowerCase().includes(busquedaLower) ||
           c.correo.toLowerCase().includes(busquedaLower) ||
-          c.nivel.toLowerCase().includes(busquedaLower) ||
-          c.categoria.toLowerCase().includes(busquedaLower)
+          c.nivel.toLowerCase().includes(busquedaLower)
       )
     }
 
@@ -116,6 +120,13 @@ export default function GestionCursosPage() {
 
     if (filtroNivel !== "todos") {
       resultado = resultado.filter((c) => c.nivel === filtroNivel)
+    }
+
+    // Lógica de filtrado por estado
+    if (filtroEstado === "activos") {
+      resultado = resultado.filter((c) => c.activo === true)
+    } else if (filtroEstado === "inactivos") {
+      resultado = resultado.filter((c) => c.activo === false)
     }
 
     if (Object.keys(filtrosColumna).length > 0) {
@@ -130,7 +141,7 @@ export default function GestionCursosPage() {
 
     setCursosFiltrados(resultado)
     setPaginaActual(1)
-  }, [busqueda, filtroDepto, filtroNivel, cursos, filtrosColumna])
+  }, [busqueda, filtroDepto, filtroNivel, filtroEstado, cursos, filtrosColumna])
 
   const indiceInicial = (paginaActual - 1) * ITEMS_POR_PAGINA
   const indiceFinal = indiceInicial + ITEMS_POR_PAGINA
@@ -181,18 +192,19 @@ export default function GestionCursosPage() {
     setIsDeleteDialogOpen(true)
   }
 
-  const handleEliminarCurso = () => {
-    if (cursoActual) setCursos(cursos.filter((c) => c.id !== cursoActual.id))
-    setIsDeleteDialogOpen(false)
+  const handleEliminarCurso = async () => {
+    if (!cursoActual) return
+    try {
+      const res = await fetch(`/api/cursos?id=${cursoActual.id}`, { method: "DELETE" })
+      if (!res.ok) throw new Error("No se pudo eliminar")
+      setCursos(cursos.filter((c) => c.id !== cursoActual.id))
+      setIsDeleteDialogOpen(false)
+    } catch (err) {
+      alert("Error al eliminar el curso")
+    }
   }
 
   const handleGuardarCurso = () => {
-    if (cursoActual) {
-      setCursos(cursos.map((c) => (c.id === cursoActual.id ? { ...formData, id: cursoActual.id } : c)))
-    } else {
-      const nuevoId = cursos.length ? Math.max(...cursos.map((c) => c.id)) + 1 : 1
-      setCursos([...cursos, { ...formData, id: nuevoId }])
-    }
     setIsDialogOpen(false)
   }
 
@@ -229,18 +241,18 @@ export default function GestionCursosPage() {
             <Button variant="outline" className="flex items-center" onClick={() => setCabecerasFijadas(!cabecerasFijadas)}>
               <PinIcon className="mr-2 h-4 w-4" /> {cabecerasFijadas ? "Desfijar Cabecera" : "Fijar Cabecera"}
             </Button>
-            <Button
-              variant="outline"
-              className="flex items-center"
-              onClick={() => {
-                setBusqueda("")
-                setFiltroDepto("todos")
-                setFiltroNivel("todos")
-                setFiltrosColumna({})
-              }}
-            >
-              <X className="mr-2 h-4 w-4" /> Limpiar filtros
-            </Button>
+            
+            <Select value={filtroEstado} onValueChange={setFiltroEstado}>
+              <SelectTrigger className="w-[150px]">
+                <Filter className="mr-2 h-4 w-4" />
+                <SelectValue placeholder="Estado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="activos">Solo Activos</SelectItem>
+                <SelectItem value="inactivos">Solo Inactivos</SelectItem>
+                <SelectItem value="todos">Ver Todos</SelectItem>
+              </SelectContent>
+            </Select>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -252,29 +264,14 @@ export default function GestionCursosPage() {
               <DropdownMenuContent>
                 <DropdownMenuItem onClick={() => setFiltroDepto("todos")}>Todos</DropdownMenuItem>
                 {departamentos.map((d) => (
-                  <DropdownMenuItem key={d} onClick={() => setFiltroDepto(d)}>
-                    {d}
-                  </DropdownMenuItem>
+                  <DropdownMenuItem key={d} onClick={() => setFiltroDepto(d)}>{d}</DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="flex items-center">
-                  <Filter className="mr-2 h-4 w-4" /> Nivel
-                  <ChevronDown className="ml-2 h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => setFiltroNivel("todos")}>Todos</DropdownMenuItem>
-                {niveles.map((n) => (
-                  <DropdownMenuItem key={n} onClick={() => setFiltroNivel(n)}>
-                    {n}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button variant="outline" size="icon" onClick={() => { setBusqueda(""); setFiltroEstado("activos"); setFiltroDepto("todos"); setFiltroNivel("todos"); setFiltrosColumna({}); }}>
+              <X className="h-4 w-4" />
+            </Button>
           </div>
         </div>
 
@@ -287,7 +284,7 @@ export default function GestionCursosPage() {
                 <TableHead className="border border-gray-300">Curso</TableHead>
                 <TableHead className="border border-gray-300">Descripción</TableHead>
                 <TableHead className="border border-gray-300">Nivel</TableHead>
-                <TableHead className="border border-gray-300">Categoría</TableHead>
+                <TableHead className="border border-gray-300">Estado</TableHead>
                 <TableHead className="border border-gray-300">Inscritos</TableHead>
                 <TableHead className="border border-gray-300">Tipo</TableHead>
                 <TableHead className="border border-gray-300">Año</TableHead>
@@ -299,86 +296,68 @@ export default function GestionCursosPage() {
             <TableBody>
               {cursosPaginados.length ? (
                 cursosPaginados.map((c) => (
-                  <TableRow key={c.id}>
+                  <TableRow key={c.id} className={!c.activo ? "bg-gray-50 opacity-60" : ""}>
                     <TableCell className="border border-gray-200">
-                      <Link href={`/dashboard/gestion-cursos/${c.id}`} className="text-blue-600 hover:underline">
-                        Ver curso
-                      </Link>
+                      <Link href={`/dashboard/gestion-cursos/${c.id}`} className="text-blue-600 hover:underline">Ver curso</Link>
                     </TableCell>
-                    <TableCell
-                      className="border border-gray-200 truncate text-center"
-                      style={{ width: "2rem", minWidth: "2rem", maxWidth: "2rem" }}
-                    >
+                    <TableCell className="border border-gray-200 truncate text-center" style={{ width: "2rem", minWidth: "2rem", maxWidth: "2rem" }}>
                       {c.codigo}
                     </TableCell>
                     <TableCell className="border border-gray-200">{c.curso}</TableCell>
                     <TableCell className="border border-gray-200">{c.descripcion}</TableCell>
                     <TableCell className="border border-gray-200">{c.nivel}</TableCell>
-                    <TableCell className="border border-gray-200">{c.categoria}</TableCell>
+                    <TableCell className="border border-gray-200">
+                      {c.activo ? (
+                        <span className="px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700 flex items-center w-fit">
+                          <CheckCircle2 className="mr-1 h-3 w-3" /> Activo
+                        </span>
+                      ) : (
+                        <span className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 flex items-center w-fit">
+                          <XCircle className="mr-1 h-3 w-3" /> Inactivo
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="border border-gray-200">{c.cupos}</TableCell>
                     <TableCell className="border border-gray-200">{c.tipo}</TableCell>
                     <TableCell className="border border-gray-200">{c.ano}</TableCell>
                     <TableCell className="border border-gray-200">{c.departamento}</TableCell>
                     <TableCell className="text-right border border-gray-200">
-                      <Link href={`/dashboard/gestion-cursos/editar/${c.id}`}>
-                        <Button variant="ghost" size="sm">
-                          <Edit className="h-4 w-4" />
+                      <div className="flex justify-end gap-2">
+                        <Link href={`/dashboard/gestion-cursos/editar/${c.id}`}>
+                          <Button variant="ghost" size="sm"><Edit className="h-4 w-4" /></Button>
+                        </Link>
+                        <Button variant="ghost" size="sm" className="text-red-600" onClick={() => handleEliminarDialogo(c)}>
+                          <Trash2 className="h-4 w-4" />
                         </Button>
-                      </Link>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={11} className="text-center py-4 border border-gray-200">
-                    No se encontraron cursos
-                  </TableCell>
+                  <TableCell colSpan={11} className="text-center py-4 border border-gray-200">No se encontraron cursos</TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </div>
 
-        {/* Controles de paginación */}
         <div className="flex items-center justify-between mt-6">
           <div className="text-sm text-gray-600">
             Mostrando {indiceInicial + 1} a {Math.min(indiceFinal, cursosFiltrados.length)} de {cursosFiltrados.length} cursos
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPaginaActual(Math.max(1, paginaActual - 1))}
-              disabled={paginaActual === 1}
-            >
+            <Button variant="outline" size="sm" onClick={() => setPaginaActual(p => Math.max(1, p - 1))} disabled={paginaActual === 1}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <div className="flex items-center gap-2">
-              {Array.from({ length: totalPaginas }, (_, i) => i + 1).map((num) => (
-                <Button
-                  key={num}
-                  variant={paginaActual === num ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setPaginaActual(num)}
-                  className="w-8"
-                >
-                  {num}
-                </Button>
-              ))}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPaginaActual(Math.min(totalPaginas, paginaActual + 1))}
-              disabled={paginaActual === totalPaginas}
-            >
+            <Button variant="outline" size="sm" onClick={() => setPaginaActual(p => Math.min(totalPaginas, p + 1))} disabled={paginaActual === totalPaginas}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
       </div>
 
-      {/* Diálogo de crear/editar */}
+      {/* Diálogo de crear/editar (Restaurado completamente) */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -411,20 +390,22 @@ export default function GestionCursosPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Diálogo de eliminar */}
+      {/* Diálogo de eliminar (Restaurado completamente) */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle>Eliminar Curso</DialogTitle>
-            <DialogDescription>¿Estás seguro que deseas eliminar este curso?</DialogDescription>
+            <DialogDescription>
+              ¿Estás seguro que deseas eliminar <strong>{cursoActual?.curso}</strong>?
+              <br /><br />
+              <span className="text-xs bg-amber-50 text-amber-800 p-2 rounded block border border-amber-200">
+                Esta acción marcará el curso como <strong>inactivo</strong> para auditoría histórica.
+              </span>
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button variant="destructive" onClick={handleEliminarCurso}>
-              Eliminar
-            </Button>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleEliminarCurso}>Eliminar Curso</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,14 +1,17 @@
 // app/api/sistemas/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth/next"; // Importación para la sesión
-import { authOptions } from "@/lib/auth";           // Importación de tus opciones
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 
-// GET - Obtener solo sistemas (modalidad="sistema")
+// GET - Obtener solo sistemas vivos (modalidad="sistema" y no eliminados)
 export async function GET() {
   try {
     const sistemas = await prisma.capacitacion.findMany({
-      where: { modalidad: "sistema" },
+      where: { 
+        modalidad: "sistema",
+        deletedAt: null // 🛡️ Filtro Soft Delete
+      },
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json(sistemas);
@@ -18,18 +21,16 @@ export async function GET() {
   }
 }
 
-// POST - Crear sistema (modalidad="sistema")
+// POST - Crear sistema con auditoría
 export async function POST(req: Request) {
   try {
-    // 🛡️ INICIO BLINDAJE DE SEGURIDAD
     const session = await getServerSession(authOptions);
     const role = session?.user?.role?.toUpperCase();
+    const requesterId = session?.user?.id;
 
     if (role !== "ADMIN" && role !== "SUPERVISOR") {
-      console.warn(`🚫 Intento de creación de sistema no autorizado por: ${session?.user?.email || "Anónimo"}`);
-      return NextResponse.json({ error: "No tienes permisos para crear sistemas" }, { status: 403 });
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
-    // 🛡️ FIN BLINDAJE
 
     const body = await req.json();
     const { titulo, descripcion, ubicacion } = body;
@@ -40,101 +41,106 @@ export async function POST(req: Request) {
 
     const nuevo = await prisma.capacitacion.create({
       data: {
-        titulo,
+        titulo: titulo.trim(),
         descripcion: descripcion || "",
         ubicacion: ubicacion || "",
-        modalidad: "sistema", // ✅ Forzar modalidad
+        modalidad: "sistema",
         fechaInicio: new Date(),
         fechaFin: new Date(),
         estado: "ACTIVO",
         cupos: 0,
+        // 📝 Registro de auditoría
+        createdById: requesterId,
+        updatedById: requesterId,
       },
     });
 
-    console.log(`✅ Sistema creado: ${nuevo.titulo}`);
+    console.log(`✅ Sistema creado por ${requesterId}: ${nuevo.titulo}`);
     return NextResponse.json(nuevo, { status: 201 });
   } catch (error) {
     console.error("Error al crear sistema:", error);
-    return NextResponse.json({ error: "Error al crear sistema" }, { status: 500 });
+    return NextResponse.json({ error: "Error al crear" }, { status: 500 });
   }
 }
 
-// PUT - Actualizar sistema
+// PUT - Actualizar sistema con auditoría
 export async function PUT(req: Request) {
   try {
-    // 🛡️ INICIO BLINDAJE DE SEGURIDAD
     const session = await getServerSession(authOptions);
     const role = session?.user?.role?.toUpperCase();
+    const requesterId = session?.user?.id;
 
     if (role !== "ADMIN" && role !== "SUPERVISOR") {
-      return NextResponse.json({ error: "No tienes permisos para actualizar sistemas" }, { status: 403 });
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
-    // 🛡️ FIN BLINDAJE
 
     const body = await req.json();
     const { id, titulo, descripcion, ubicacion } = body;
 
-    if (!id) {
-      return NextResponse.json({ error: "ID es requerido" }, { status: 400 });
-    }
+    if (!id) return NextResponse.json({ error: "ID requerido" }, { status: 400 });
 
-    // Verificar que sea un sistema (no una capacitación)
-    const existe = await prisma.capacitacion.findUnique({
-      where: { id },
+    // Verificar que sea un sistema y esté vivo
+    const existe = await prisma.capacitacion.findFirst({
+      where: { id, modalidad: "sistema", deletedAt: null },
     });
 
-    if (!existe || existe.modalidad !== "sistema") {
+    if (!existe) {
       return NextResponse.json({ error: "Sistema no encontrado" }, { status: 404 });
     }
 
     const actualizado = await prisma.capacitacion.update({
       where: { id },
       data: {
-        titulo,
+        titulo: titulo?.trim(),
         descripcion,
         ubicacion,
+        updatedById: requesterId, // 📝 Trazabilidad
       },
     });
 
-    console.log(`✅ Sistema actualizado: ${actualizado.titulo}`);
     return NextResponse.json(actualizado);
   } catch (error) {
-    console.error("Error al actualizar sistema:", error);
+    console.error("Error al actualizar:", error);
     return NextResponse.json({ error: "Error al actualizar" }, { status: 500 });
   }
 }
 
-// DELETE - Eliminar sistema
+// DELETE - Borrado Lógico (Soft Delete)
 export async function DELETE(req: Request) {
   try {
-    // 🛡️ INICIO BLINDAJE DE SEGURIDAD
     const session = await getServerSession(authOptions);
     const role = session?.user?.role?.toUpperCase();
+    const requesterId = session?.user?.id;
 
     if (role !== "ADMIN" && role !== "SUPERVISOR") {
-      return NextResponse.json({ error: "No tienes permisos para eliminar sistemas" }, { status: 403 });
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
-    // 🛡️ FIN BLINDAJE
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
-    if (!id) {
-      return NextResponse.json({ error: "ID es requerido" }, { status: 400 });
-    }
+    if (!id) return NextResponse.json({ error: "ID requerido" }, { status: 400 });
 
-    // Verificar que sea un sistema
-    const existe = await prisma.capacitacion.findUnique({
-      where: { id },
+    const existe = await prisma.capacitacion.findFirst({
+      where: { id, modalidad: "sistema", deletedAt: null },
     });
 
-    if (!existe || existe.modalidad !== "sistema") {
+    if (!existe) {
       return NextResponse.json({ error: "Sistema no encontrado" }, { status: 404 });
     }
 
-    await prisma.capacitacion.delete({ where: { id } });
-    console.log(`✅ Sistema eliminado: ${existe.titulo}`);
-    return NextResponse.json({ message: "Sistema eliminado" });
+    // 🗑️ Soft Delete
+    await prisma.capacitacion.update({ 
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        deletedById: requesterId,
+        estado: "INACTIVO"
+      } 
+    });
+
+    console.log(`🗑️ Sistema marcado como eliminado por ${requesterId}: ${existe.titulo}`);
+    return NextResponse.json({ message: "Sistema eliminado correctamente" });
   } catch (error) {
     console.error("Error al eliminar:", error);
     return NextResponse.json({ error: "Error al eliminar" }, { status: 500 });

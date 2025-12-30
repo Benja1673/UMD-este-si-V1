@@ -1,14 +1,13 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
 
-
-
-
 datasource db {
   provider  = "postgresql"
-  url       = env("DATABASE_URL") // Usa la conexión pooler (6543)
-  directUrl = env("DIRECT_URL")   // Usa la conexión directa (5432)
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -21,16 +20,22 @@ model User {
   direccion       String?
   fechaNacimiento DateTime?
   especialidad    String?
-  estado          String    @default("ACTIVO")
+  estado          String    @default("ACTIVO") // "ACTIVO" | "INACTIVO"
   nivelActual     String?
   hashedPassword  String
   role            String    @default("docente")
   departamentoId  String?
+  
+  // Auditoría y Borrado Lógico
+  deletedAt       DateTime?
+  createdById     String?
+  updatedById     String?
+  deletedById     String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   // Relaciones
-  departamento     Departamento?     @relation(fields: [departamentoId], references: [id], onUpdate: NoAction)
+  departamento     Departamento?    @relation(fields: [departamentoId], references: [id], onUpdate: NoAction)
   certificados     Certificado[]
   inscripciones    InscripcionCurso[]
 
@@ -41,8 +46,15 @@ model Departamento {
   id        String    @id @default(cuid())
   nombre    String    @unique
   codigo    String?   @unique
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  
+  // Auditoría y Borrado Lógico
+  deletedAt       DateTime?
+  createdById     String?
+  updatedById     String?
+  deletedById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
   cursos    Curso[]
   users     User[]
 
@@ -56,8 +68,15 @@ model Categoria {
   nivel         String   @default("General")
   orden         Int
   esObligatoria Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  
+  // Auditoría y Borrado Lógico
+  deletedAt       DateTime?
+  createdById     String?
+  updatedById     String?
+  deletedById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
   cursos        Curso[]
 
   @@map("categorias")
@@ -75,26 +94,28 @@ model Curso {
   fechaInicio       DateTime?
   fechaFin          DateTime?
   cupos             Int?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
   categoriaId       String
   departamentoId    String
-  instructor      String?
+  instructor        String?
   tipo              String              @default("Curso")
   ano               Int                 @default(2025)
-    semestre          Int?                // ← Debe estar aquí
+  semestre          Int?
+
+  // Auditoría y Borrado Lógico
+  deletedAt       DateTime?
+  createdById     String?
+  updatedById     String?
+  deletedById     String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
 
   // Relaciones
   prerrequisitos    CursoPrerequisito[] @relation("CursoPrincipal")
   esPrerrequisitoDE CursoPrerequisito[] @relation("CursoPrerequisito")
   categoria         Categoria           @relation(fields: [categoriaId], references: [id], onUpdate: NoAction)
   departamento      Departamento        @relation(fields: [departamentoId], references: [id], onUpdate: NoAction)
-
   inscripciones     InscripcionCurso[]
-
-  // 🔥 Nueva relación con condiciones
   condiciones       CondicionServicio[]
-
 
   @@map("cursos")
 }
@@ -121,10 +142,16 @@ model InscripcionCurso {
   nota              Float?
   observaciones     String?
   intentos          Int       @default(0)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
   userId            String
   cursoId           String
+
+  // Auditoría y Borrado Lógico
+  deletedAt       DateTime?
+  createdById     String?
+  updatedById     String?
+  deletedById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   curso   Curso @relation(fields: [cursoId], references: [id], onUpdate: NoAction)
   usuario User  @relation(fields: [userId], references: [id], onUpdate: NoAction)
@@ -142,6 +169,12 @@ model Evaluacion {
   fechaFin    DateTime
   activa      Boolean  @default(true)
   obligatoria Boolean  @default(false)
+  
+  // Auditoría y Borrado Lógico
+  deletedAt       DateTime?
+  createdById     String?
+  updatedById     String?
+  deletedById     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -158,9 +191,15 @@ model Certificado {
   codigoVerificacion String    @unique
   urlArchivo         String?
   activo             Boolean   @default(true)
+  userId             String?
+
+  // Auditoría y Borrado Lógico
+  deletedAt       DateTime?
+  createdById     String?
+  updatedById     String?
+  deletedById     String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
-  userId             String?
 
   usuario  User? @relation(fields: [userId], references: [id], onUpdate: NoAction)
 
@@ -177,6 +216,12 @@ model Capacitacion {
   estado      String   @default("PROGRAMADA")
   cupos       Int?
   ubicacion   String?
+  
+  // Auditoría y Borrado Lógico
+  deletedAt       DateTime?
+  createdById     String?
+  updatedById     String?
+  deletedById     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -192,7 +237,6 @@ model PasswordReset {
   createdAt DateTime @default(now())
 }
 
-
 model CondicionServicio {
   id              String   @id @default(cuid())
   servicioTipo    String   // 'SISTEMA', 'CAPACITACION', 'EVALUACION', 'CERTIFICADO'
@@ -200,7 +244,14 @@ model CondicionServicio {
   cursoId         String?  // puede ser NULL si es "General"
   estadoRequerido String?  // 'INSCRITO', 'APROBADO', 'REPROBADO', etc.
   esGeneral       Boolean  @default(false)
+  
+  // Auditoría y Borrado Lógico
+  deletedAt       DateTime?
+  createdById     String?
+  updatedById     String?
+  deletedById     String?
   createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt // 👈 Añadimos @default(now())
 
   curso Curso? @relation(fields: [cursoId], references: [id], onUpdate: NoAction, onDelete: Cascade)
 

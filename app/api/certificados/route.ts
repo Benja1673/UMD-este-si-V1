@@ -3,10 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions, isAdminOrSupervisor } from "@/lib/auth";
 
-// GET - Obtener todos los certificados
+// GET - Obtener todos los certificados que no han sido eliminados
 export async function GET() {
   try {
     const certificados = await prisma.certificado.findMany({
+      where: {
+        deletedAt: null // 🛡️ Filtro para ignorar registros con borrado lógico
+      },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -26,16 +29,17 @@ export async function GET() {
   }
 }
 
-// POST - Crear certificado
+// POST - Crear certificado con auditoría
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
 
     // BLINDAJE: solo Admin o Supervisor pueden crear certificados
     if (!session || !(await isAdminOrSupervisor(session))) {
-      return NextResponse.json({ error: "No tienes permisos para crear certificados" }, { status: 403 });
+      return NextResponse.json({ error: "No tienes permisos" }, { status: 403 });
     }
 
+    const requesterId = session.user.id;
     const body = await req.json();
     const { titulo, descripcion } = body;
 
@@ -51,6 +55,9 @@ export async function POST(req: Request) {
         fechaEmision: new Date(),
         codigoVerificacion: `CERT-${Date.now()}`,
         activo: true,
+        // 📝 Registro de auditoría
+        createdById: requesterId,
+        updatedById: requesterId,
       },
       select: {
         id: true,
@@ -59,7 +66,7 @@ export async function POST(req: Request) {
       },
     });
 
-    console.log(`✅ Certificado creado ID: ${nuevo.id}`);
+    console.log(`✅ Certificado creado por ${requesterId} ID: ${nuevo.id}`);
     return NextResponse.json(nuevo, { status: 201 });
   } catch (error: any) {
     console.error("❌ Error al crear certificado:", error);
@@ -70,16 +77,17 @@ export async function POST(req: Request) {
   }
 }
 
-// PUT - Actualizar certificado
+// PUT - Actualizar certificado con auditoría
 export async function PUT(req: Request) {
   try {
     const session = await getServerSession(authOptions);
 
     // BLINDAJE: solo Admin o Supervisor pueden actualizar certificados
     if (!session || !(await isAdminOrSupervisor(session))) {
-      return NextResponse.json({ error: "No tienes permisos para actualizar certificados" }, { status: 403 });
+      return NextResponse.json({ error: "No tienes permisos" }, { status: 403 });
     }
 
+    const requesterId = session.user.id;
     const body = await req.json();
     const { id, titulo, descripcion } = body;
 
@@ -87,11 +95,19 @@ export async function PUT(req: Request) {
     if (!titulo || !titulo.trim())
       return NextResponse.json({ error: "El título es obligatorio" }, { status: 400 });
 
+    // Verificar que exista y no esté eliminado
+    const existe = await prisma.certificado.findFirst({
+      where: { id, deletedAt: null }
+    });
+
+    if (!existe) return NextResponse.json({ error: "Certificado no encontrado" }, { status: 404 });
+
     const actualizado = await prisma.certificado.update({
       where: { id },
       data: {
         titulo: titulo.trim(),
         descripcion: descripcion?.trim() || "",
+        updatedById: requesterId, // 📝 Registro de quién editó
       },
       select: {
         id: true,
@@ -100,7 +116,7 @@ export async function PUT(req: Request) {
       },
     });
 
-    console.log(`✅ Certificado actualizado ID: ${actualizado.id}`);
+    console.log(`✅ Certificado actualizado por ${requesterId} ID: ${actualizado.id}`);
     return NextResponse.json(actualizado);
   } catch (error: any) {
     console.error("❌ Error al actualizar certificado:", error);
@@ -111,28 +127,39 @@ export async function PUT(req: Request) {
   }
 }
 
-// DELETE - Eliminar certificado
+// DELETE - Borrado Lógico (Soft Delete)
 export async function DELETE(req: Request) {
   try {
     const session = await getServerSession(authOptions);
 
     // BLINDAJE: solo Admin o Supervisor pueden eliminar certificados
     if (!session || !(await isAdminOrSupervisor(session))) {
-      return NextResponse.json({ error: "No tienes permisos para eliminar certificados" }, { status: 403 });
+      return NextResponse.json({ error: "No tienes permisos" }, { status: 403 });
     }
 
+    const requesterId = session.user.id;
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
     if (!id) return NextResponse.json({ error: "ID es requerido" }, { status: 400 });
 
-    const existe = await prisma.certificado.findUnique({ where: { id } });
+    const existe = await prisma.certificado.findFirst({ 
+      where: { id, deletedAt: null } 
+    });
+
     if (!existe)
       return NextResponse.json({ error: "Certificado no encontrado" }, { status: 404 });
 
-    await prisma.certificado.delete({ where: { id } });
+    // 🗑️ Soft Delete: No eliminamos el registro, solo marcamos fecha y autor
+    await prisma.certificado.update({ 
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        deletedById: requesterId,
+      }
+    });
 
-    console.log(`✅ Certificado eliminado: ${existe.titulo}`);
+    console.log(`🗑️ Certificado marcado como eliminado por ${requesterId}: ${existe.titulo}`);
     return NextResponse.json({ message: "Certificado eliminado correctamente" });
   } catch (error: any) {
     console.error("❌ Error al eliminar certificado:", error);

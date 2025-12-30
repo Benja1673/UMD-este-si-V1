@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { Search, ChevronLeft, ChevronRight, Filter, Trash2 } from "lucide-react"
+import { Search, ChevronLeft, ChevronRight, Filter, Trash2, Save, AlertTriangle } from "lucide-react"
 import BreadcrumbNav from "@/components/breadcrumb-nav"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/use-toast"
+import { Switch } from "@/components/ui/switch" // ✅ Importante para el estado
 
 type Docente = {
   id: string
@@ -31,8 +32,8 @@ type Docente = {
 }
 
 type DocenteInscrito = Docente & {
-  inscripcionId?: string // ID de la inscripción en BD (si ya existe)
-  estadoInscripcion: string // Estado actual
+  inscripcionId?: string
+  estadoInscripcion: string
 }
 
 export default function EditarCursoPage() {
@@ -55,17 +56,12 @@ export default function EditarCursoPage() {
   const [loading, setLoading] = useState(true)
 
   const departamentosDocentes = Array.from(
-    new Set(
-      docentesDisponibles
-        .map((d) => d.departamento?.nombre)
-        .filter((nombre): nombre is string => !!nombre)
-    )
+    new Set(docentesDisponibles.map((d) => d.departamento?.nombre).filter((n): n is string => !!n))
   )
   const especialidades = Array.from(
     new Set(docentesDisponibles.map((d) => d.especialidad).filter(Boolean))
   )
 
-  // Cargar datos del curso, categorías, departamentos y docentes
   useEffect(() => {
     async function fetchData() {
       setLoading(true)
@@ -80,221 +76,139 @@ export default function EditarCursoPage() {
         setDepartamentos(deps)
         setCategorias(cats)
         setDocentesDisponibles(users)
-        setCursoData(cursoRes)
+        
+        // ✅ Cargamos los datos del curso incluyendo el campo 'activo'
+        setCursoData({
+          ...cursoRes,
+          activo: cursoRes.activo ?? true
+        })
 
-        // Inscritos desde la API con su ID de inscripción y estado
-        const inscritos: DocenteInscrito[] = cursoRes.inscripciones.map((i: any) => ({
+        const inscritos: DocenteInscrito[] = (cursoRes.inscripciones || []).map((i: any) => ({
           ...i.usuario,
-          inscripcionId: i.id, // ID de la inscripción en BD
+          inscripcionId: i.id,
           estadoInscripcion: i.estado || "INSCRITO",
         }))
         setDocentesInscritos(inscritos)
 
-        // No inscritos = todos los docentes - los inscritos
         const noInscritos = users.filter((u: Docente) => !inscritos.some((i) => i.id === u.id))
         setDocentesNoInscritos(noInscritos)
       } catch (error) {
-        console.error(error)
-        toast({
-          title: "Error",
-          description: "Error cargando datos del curso",
-          variant: "destructive",
-        })
+        toast({ title: "Error", description: "No se pudieron cargar los datos", variant: "destructive" })
       }
       setLoading(false)
     }
     if (id) fetchData()
-  }, [id])
+  }, [id, toast])
 
-  // Filtrar docentes disponibles
   const docentesFiltrados = docentesNoInscritos.filter((docente) => {
-    const cumpleBusqueda =
-      !busqueda ||
-      `${docente.name} ${docente.apellido}`.toLowerCase().includes(busqueda.toLowerCase()) ||
-      docente.rut?.toLowerCase().includes(busqueda.toLowerCase()) ||
-      docente.email?.toLowerCase().includes(busqueda.toLowerCase())
-
-    const cumpleDepto =
-      filtroDepartamento === "todos" || docente.departamento?.nombre === filtroDepartamento
-
-    const cumpleEsp =
-      filtroEspecialidad === "todos" || docente.especialidad === filtroEspecialidad
-
+    const cumpleBusqueda = !busqueda || `${docente.name} ${docente.apellido}`.toLowerCase().includes(busqueda.toLowerCase()) || docente.rut?.toLowerCase().includes(busqueda.toLowerCase())
+    const cumpleDepto = filtroDepartamento === "todos" || docente.departamento?.nombre === filtroDepartamento
+    const cumpleEsp = filtroEspecialidad === "todos" || docente.especialidad === filtroEspecialidad
     return cumpleBusqueda && cumpleDepto && cumpleEsp
   })
 
-  // Inscribir docentes seleccionados
   const inscribirSeleccionados = () => {
-    const docentesAInscribir = docentesNoInscritos
-      .filter((d) => seleccionadosNoInscritos.includes(d.id))
-      .map((d) => ({
-        ...d,
-        inscripcionId: undefined, // No tiene ID porque es nuevo
-        estadoInscripcion: "INSCRITO", // Estado por defecto
-      }))
-
-    setDocentesInscritos([...docentesInscritos, ...docentesAInscribir])
+    const nuevos = docentesNoInscritos.filter((d) => seleccionadosNoInscritos.includes(d.id)).map(d => ({ ...d, estadoInscripcion: "INSCRITO" }))
+    setDocentesInscritos([...docentesInscritos, ...nuevos])
     setDocentesNoInscritos(docentesNoInscritos.filter((d) => !seleccionadosNoInscritos.includes(d.id)))
     setSeleccionadosNoInscritos([])
   }
 
-  // Desinscribir docentes seleccionados
   const desinscribirSeleccionados = () => {
-    const docentesADesinscribir = docentesInscritos.filter((d) => seleccionadosInscritos.includes(d.id))
-    setDocentesNoInscritos([...docentesNoInscritos, ...docentesADesinscribir])
+    const quitar = docentesInscritos.filter((d) => seleccionadosInscritos.includes(d.id))
+    setDocentesNoInscritos([...docentesNoInscritos, ...quitar])
     setDocentesInscritos(docentesInscritos.filter((d) => !seleccionadosInscritos.includes(d.id)))
     setSeleccionadosInscritos([])
   }
 
-  // Manejar cambio de estado de inscripción
-  const handleEstadoChange = async (docente: DocenteInscrito, nuevoEstado: string) => {
-    try {
-      // Si la inscripción ya existe en BD, hacer PATCH
-      if (docente.inscripcionId) {
-        const res = await fetch(`/api/inscripciones/${docente.inscripcionId}/estado`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ estado: nuevoEstado }),
-        })
-
-        if (!res.ok) {
-          throw new Error("Error al actualizar estado en el servidor")
-        }
-
-        toast({
-          title: "Éxito",
-          description: "Estado actualizado correctamente",
-        })
-      }
-
-      // Actualizar estado local (para nuevos y existentes)
-      setDocentesInscritos((prev) =>
-        prev.map((d) =>
-          d.id === docente.id ? { ...d, estadoInscripcion: nuevoEstado } : d
-        )
-      )
-    } catch (error) {
-      console.error(error)
-      toast({
-        title: "Error",
-        description: "No se pudo actualizar el estado",
-        variant: "destructive",
-      })
-    }
+  const handleEstadoChange = (docente: DocenteInscrito, nuevoEstado: string) => {
+    setDocentesInscritos((prev) => prev.map((d) => d.id === docente.id ? { ...d, estadoInscripcion: nuevoEstado } : d ))
   }
 
-  // Eliminar curso
   const handleEliminarCurso = async () => {
-    if (!confirm("¿Seguro que deseas eliminar este curso?")) return
-
+    if (!confirm("¿Seguro que deseas eliminar este curso? Se aplicará un borrado lógico.")) return
     try {
-      const res = await fetch(`/api/cursos/${id}`, { method: "DELETE" })
+      const res = await fetch(`/api/cursos?id=${id}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Error al eliminar")
-
-      toast({
-        title: "Éxito",
-        description: "Curso eliminado correctamente",
-      })
-      router.push("/gestion-cursos")
+      toast({ title: "Eliminado", description: "Curso marcado como eliminado correctamente" })
+      router.push("/dashboard/gestion-cursos")
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "No se pudo eliminar el curso",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "No se pudo eliminar", variant: "destructive" })
     }
   }
 
-  // Guardar cambios
   const handleGuardarCambios = async () => {
     try {
-      const inscripcionesActualizadas = docentesInscritos.map((d) => ({
-        userId: d.id,
-        estado: d.estadoInscripcion,
-      }))
-
-      console.log("📤 Enviando inscripciones:", inscripcionesActualizadas)
+      const payload = {
+        ...cursoData,
+        docentesInscritos: docentesInscritos.map((d) => ({
+          userId: d.id,
+          estado: d.estadoInscripcion,
+        })),
+      }
 
       const response = await fetch(`/api/cursos/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...cursoData,
-          docentesInscritos: inscripcionesActualizadas,
-        }),
+        body: JSON.stringify(payload),
       })
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Error al guardar cambios")
-      }
+      if (!response.ok) throw new Error("Error al actualizar")
 
-      toast({
-        title: "Éxito",
-        description: "Curso actualizado correctamente",
-      })
-      router.push("/gestion-cursos")
+      toast({ title: "Éxito", description: "Curso actualizado con auditoría" })
+      router.push("/dashboard/gestion-cursos")
+      router.refresh()
     } catch (error: any) {
-      console.error(error)
-      toast({
-        title: "Error",
-        description: error.message || "No se pudo actualizar el curso",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: error.message, variant: "destructive" })
     }
   }
 
-  // Función para obtener color según estado
   const getColor = (estado: string) => {
-    switch (estado) {
-      case "APROBADO":
-        return "bg-green-100 text-green-800 border-green-300"
-      case "REPROBADO":
-        return "bg-red-100 text-red-800 border-red-300"
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-300"
-    }
+    if (estado === "APROBADO") return "bg-green-100 text-green-800 border-green-300"
+    if (estado === "REPROBADO") return "bg-red-100 text-red-800 border-red-300"
+    return "bg-gray-100 text-gray-800 border-gray-300"
   }
 
-  if (loading || !cursoData) {
-    return <div className="p-6 text-gray-500">Cargando datos del curso...</div>
-  }
+  if (loading || !cursoData) return <div className="p-6 text-gray-500 animate-pulse">Cargando datos del curso...</div>
 
   return (
     <div className="space-y-6">
       <BreadcrumbNav current="EDITAR CURSO" />
 
       <div className="bg-white rounded-lg shadow p-6">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">Editar Curso</h1>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold text-gray-800">Editar Curso</h1>
+          
+          {/* ✅ Switch de Estado Activo/Inactivo */}
+          <div className="flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-full border">
+            <Label htmlFor="estado-curso" className="text-sm font-semibold">Estado del Curso:</Label>
+            <Switch 
+              id="estado-curso" 
+              checked={cursoData.activo} 
+              onCheckedChange={(val) => setCursoData({ ...cursoData, activo: val })} 
+            />
+            <span className={`text-xs font-bold ${cursoData.activo ? "text-green-600" : "text-gray-400"}`}>
+              {cursoData.activo ? "ACTIVO" : "INACTIVO"}
+            </span>
+          </div>
+        </div>
 
-        {/* Información del curso */}
         <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Información del Curso</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Información General</CardTitle></CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="flex flex-col gap-2">
                 <Label>Nombre</Label>
-                <Input
-                  value={cursoData.nombre || ""}
-                  onChange={(e) => setCursoData({ ...cursoData, nombre: e.target.value })}
-                />
+                <Input value={cursoData.nombre || ""} onChange={(e) => setCursoData({ ...cursoData, nombre: e.target.value })} />
               </div>
               <div className="flex flex-col gap-2">
                 <Label>Código</Label>
-                <Input
-                  value={cursoData.codigo || ""}
-                  onChange={(e) => setCursoData({ ...cursoData, codigo: e.target.value })}
-                />
+                <Input value={cursoData.codigo || ""} onChange={(e) => setCursoData({ ...cursoData, codigo: e.target.value })} />
               </div>
               <div className="flex flex-col gap-2">
                 <Label>Nivel</Label>
-                <Select
-                  value={cursoData.nivel || ""}
-                  onValueChange={(v) => setCursoData({ ...cursoData, nivel: v })}
-                >
-                  <SelectTrigger><SelectValue placeholder="Selecciona" /></SelectTrigger>
+                <Select value={cursoData.nivel || ""} onValueChange={(v) => setCursoData({ ...cursoData, nivel: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Inicial">Inicial</SelectItem>
                     <SelectItem value="Intermedio">Intermedio</SelectItem>
@@ -302,216 +216,81 @@ export default function EditarCursoPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex flex-col gap-2">
-                <Label>Tipo</Label>
-                <Select
-                  value={cursoData.tipo || ""}
-                  onValueChange={(v) => setCursoData({ ...cursoData, tipo: v })}
-                >
-                  <SelectTrigger><SelectValue placeholder="Selecciona" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Teórico">Teórico</SelectItem>
-                    <SelectItem value="Práctico">Práctico</SelectItem>
-                    <SelectItem value="Teórico-Práctico">Teórico-Práctico</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label>Año</Label>
-                <Input
-                  type="number"
-                  value={cursoData.ano || ""}
-                  onChange={(e) => setCursoData({ ...cursoData, ano: e.target.value })}
-                />
-              </div>
               <div className="flex flex-col gap-2 md:col-span-2 lg:col-span-3">
                 <Label>Descripción</Label>
-                <Textarea
-                  value={cursoData.descripcion || ""}
-                  onChange={(e) => setCursoData({ ...cursoData, descripcion: e.target.value })}
-                />
+                <Textarea value={cursoData.descripcion || ""} onChange={(e) => setCursoData({ ...cursoData, descripcion: e.target.value })} />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Panel de docentes */}
         <Card>
-          <CardHeader>
-            <CardTitle>Gestión de Docentes</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Gestión de Docentes</CardTitle></CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-              {/* Izquierda: inscritos */}
+              {/* Lista Inscritos */}
               <div className="lg:col-span-5">
-                <h3 className="font-semibold mb-3 text-gray-700">
-                  Docentes Inscritos ({docentesInscritos.length})
-                </h3>
+                <h3 className="font-semibold mb-3">Docentes Inscritos ({docentesInscritos.length})</h3>
                 <div className="border rounded-md h-96 overflow-y-auto">
                   <Table>
                     <TableHeader className="sticky top-0 bg-white z-10">
                       <TableRow>
-                        <TableHead className="w-12"></TableHead>
+                        <TableHead className="w-10"></TableHead>
                         <TableHead>Nombre</TableHead>
-                        <TableHead>RUT</TableHead>
                         <TableHead>Estado</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {docentesInscritos.length > 0 ? (
-                        docentesInscritos.map((docente) => (
-                          <TableRow key={docente.id}>
-                            <TableCell>
-                              <Checkbox
-                                checked={seleccionadosInscritos.includes(docente.id)}
-                                onCheckedChange={() =>
-                                  setSeleccionadosInscritos((prev) =>
-                                    prev.includes(docente.id)
-                                      ? prev.filter((i) => i !== docente.id)
-                                      : [...prev, docente.id]
-                                  )
-                                }
-                              />
-                            </TableCell>
-                            <TableCell>{`${docente.name} ${docente.apellido}`}</TableCell>
-                            <TableCell>{docente.rut}</TableCell>
-                            <TableCell>
-                              <Select
-                                value={docente.estadoInscripcion}
-                                onValueChange={(nuevoEstado) => handleEstadoChange(docente, nuevoEstado)}
-                              >
-                                <SelectTrigger className={`w-40 ${getColor(docente.estadoInscripcion)}`}>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="INSCRITO">Inscrito</SelectItem>
-                                  <SelectItem value="APROBADO">Aprobado</SelectItem>
-                                  <SelectItem value="REPROBADO">Reprobado</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      ) : (
-                        <TableRow>
-                          <TableCell colSpan={4} className="text-center text-gray-500 py-8">
-                            No hay docentes inscritos
+                      {docentesInscritos.map((docente) => (
+                        <TableRow key={docente.id}>
+                          <TableCell><Checkbox checked={seleccionadosInscritos.includes(docente.id)} onCheckedChange={() => setSeleccionadosInscritos(prev => prev.includes(docente.id) ? prev.filter(i => i !== docente.id) : [...prev, docente.id])} /></TableCell>
+                          <TableCell className="text-sm">{`${docente.name} ${docente.apellido}`}</TableCell>
+                          <TableCell>
+                            <Select value={docente.estadoInscripcion} onValueChange={(val) => handleEstadoChange(docente, val)}>
+                              <SelectTrigger className={`h-8 text-xs ${getColor(docente.estadoInscripcion)}`}><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="INSCRITO">Inscrito</SelectItem>
+                                <SelectItem value="APROBADO">Aprobado</SelectItem>
+                                <SelectItem value="REPROBADO">Reprobado</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </TableCell>
                         </TableRow>
-                      )}
+                      ))}
                     </TableBody>
                   </Table>
                 </div>
               </div>
 
-              {/* Botones centrales */}
-              <div className="lg:col-span-2 flex flex-col items-center justify-center gap-4">
-                <Button
-                  onClick={inscribirSeleccionados}
-                  disabled={seleccionadosNoInscritos.length === 0}
-                  variant="outline"
-                >
-                  <ChevronLeft className="mr-2 h-4 w-4" />
-                  Inscribir
-                </Button>
-                <Button
-                  onClick={desinscribirSeleccionados}
-                  disabled={seleccionadosInscritos.length === 0}
-                  variant="outline"
-                >
-                  Desinscribir
-                  <ChevronRight className="ml-2 h-4 w-4" />
-                </Button>
+              <div className="lg:col-span-2 flex flex-col items-center justify-center gap-2">
+                <Button onClick={inscribirSeleccionados} disabled={seleccionadosNoInscritos.length === 0} variant="outline" size="sm" className="w-full"><ChevronLeft className="h-4 w-4" /> Inscribir</Button>
+                <Button onClick={desinscribirSeleccionados} disabled={seleccionadosInscritos.length === 0} variant="outline" size="sm" className="w-full">Quitar <ChevronRight className="h-4 w-4" /></Button>
               </div>
 
-              {/* Derecha: disponibles */}
+              {/* Lista Disponibles */}
               <div className="lg:col-span-5">
-                <h3 className="font-semibold mb-3 text-gray-700">Docentes Disponibles ({docentesFiltrados.length})</h3>
-
-                <div className="flex flex-col gap-2 mb-3">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                    <Input
-                      placeholder="Buscar docente..."
-                      className="pl-10"
-                      value={busqueda}
-                      onChange={(e) => setBusqueda(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="flex gap-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="flex-1">
-                          <Filter className="mr-2 h-4 w-4" /> Departamento
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem onClick={() => setFiltroDepartamento("todos")}>Todos</DropdownMenuItem>
-                        {departamentosDocentes.map((d) => (
-                          <DropdownMenuItem key={d} onClick={() => setFiltroDepartamento(d)}>
-                            {d}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="flex-1">
-                          <Filter className="mr-2 h-4 w-4" /> Especialidad
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem onClick={() => setFiltroEspecialidad("todos")}>Todos</DropdownMenuItem>
-                        {especialidades.map((e) => (
-                          <DropdownMenuItem key={e} onClick={() => setFiltroEspecialidad(e)}>
-                            {e}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                <h3 className="font-semibold mb-3">Disponibles ({docentesFiltrados.length})</h3>
+                <div className="relative mb-2">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                  <Input placeholder="Buscar..." className="pl-8 h-9" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 </div>
-
-                <div className="border rounded-md h-96 overflow-y-auto">
+                <div className="border rounded-md h-80 overflow-y-auto">
                   <Table>
                     <TableHeader className="sticky top-0 bg-white z-10">
                       <TableRow>
-                        <TableHead className="w-12"></TableHead>
+                        <TableHead className="w-10"></TableHead>
                         <TableHead>Nombre</TableHead>
-                        <TableHead>RUT</TableHead>
-                        <TableHead>Departamento</TableHead>
+                        <TableHead>Depto.</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {docentesFiltrados.length > 0 ? (
-                        docentesFiltrados.map((docente) => (
-                          <TableRow key={docente.id}>
-                            <TableCell>
-                              <Checkbox
-                                checked={seleccionadosNoInscritos.includes(docente.id)}
-                                onCheckedChange={() =>
-                                  setSeleccionadosNoInscritos((prev) =>
-                                    prev.includes(docente.id)
-                                      ? prev.filter((i) => i !== docente.id)
-                                      : [...prev, docente.id]
-                                  )
-                                }
-                              />
-                            </TableCell>
-                            <TableCell>{`${docente.name} ${docente.apellido}`}</TableCell>
-                            <TableCell>{docente.rut}</TableCell>
-                            <TableCell>{docente.departamento?.nombre || "-"}</TableCell>
-                          </TableRow>
-                        ))
-                      ) : (
-                        <TableRow>
-                          <TableCell colSpan={4} className="text-center text-gray-500 py-8">
-                            No se encontraron docentes
-                          </TableCell>
+                      {docentesFiltrados.map((docente) => (
+                        <TableRow key={docente.id}>
+                          <TableCell><Checkbox checked={seleccionadosNoInscritos.includes(docente.id)} onCheckedChange={() => setSeleccionadosNoInscritos(prev => prev.includes(docente.id) ? prev.filter(i => i !== docente.id) : [...prev, docente.id])} /></TableCell>
+                          <TableCell className="text-sm">{`${docente.name} ${docente.apellido}`}</TableCell>
+                          <TableCell className="text-xs text-gray-500">{docente.departamento?.nombre || "-"}</TableCell>
                         </TableRow>
-                      )}
+                      ))}
                     </TableBody>
                   </Table>
                 </div>
@@ -520,16 +299,15 @@ export default function EditarCursoPage() {
           </CardContent>
         </Card>
 
-        {/* Botones finales */}
-        <div className="flex justify-between mt-6">
-          <Button onClick={handleEliminarCurso} variant="destructive" size="lg">
-            <Trash2 className="mr-2 h-4 w-4" /> Eliminar Curso
+        <div className="flex justify-between items-center mt-8 pt-6 border-t">
+          <Button onClick={handleEliminarCurso} variant="destructive" className="flex items-center gap-2">
+            <Trash2 className="h-4 w-4" /> Eliminar permanentemente
           </Button>
-          <Button onClick={handleGuardarCambios} className="bg-blue-600 hover:bg-blue-700" size="lg">
-            Guardar Cambios
+          <Button onClick={handleGuardarCambios} className="bg-blue-600 hover:bg-blue-700 px-8 flex items-center gap-2">
+            <Save className="h-4 w-4" /> Guardar Cambios
           </Button>
         </div>
-      </div>
+      </div>  
     </div>
   )
 }

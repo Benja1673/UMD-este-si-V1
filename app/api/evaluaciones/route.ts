@@ -1,13 +1,16 @@
 // app/api/evaluaciones/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth/next"; // Importación necesaria para la sesión
-import { authOptions } from "@/lib/auth";           // Importación de tus opciones de auth
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 
-// GET - Obtener todas las evaluaciones
+// GET - Obtener todas las evaluaciones que NO han sido eliminadas
 export async function GET() {
   try {
     const evaluaciones = await prisma.evaluacion.findMany({
+      where: {
+        deletedAt: null // 🛡️ Filtro Soft Delete
+      },
       orderBy: { createdAt: "desc" },
     });
     
@@ -22,23 +25,20 @@ export async function GET() {
   }
 }
 
-// POST - Crear evaluación
+// POST - Crear evaluación con auditoría
 export async function POST(req: Request) {
   try {
-    // 🛡️ INICIO BLINDAJE DE SEGURIDAD
     const session = await getServerSession(authOptions);
     const role = session?.user?.role?.toUpperCase();
+    const requesterId = session?.user?.id;
 
     if (role !== "ADMIN" && role !== "SUPERVISOR") {
-      console.warn(`🚫 Intento de creación no autorizado por: ${session?.user?.email || "Anónimo"}`);
-      return NextResponse.json({ error: "No tienes permisos para crear evaluaciones" }, { status: 403 });
+      console.warn(`🚫 Intento no autorizado por: ${session?.user?.email || "Anónimo"}`);
+      return NextResponse.json({ error: "No tienes permisos" }, { status: 403 });
     }
-    // 🛡️ FIN BLINDAJE
 
     const body = await req.json();
     const { titulo, link } = body;
-
-    console.log("📝 Creando evaluación:", { titulo, link });
 
     if (!titulo || !titulo.trim()) {
       return NextResponse.json({ error: "El título es obligatorio" }, { status: 400 });
@@ -53,104 +53,100 @@ export async function POST(req: Request) {
         fechaFin: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 año
         activa: true,
         obligatoria: false,
+        // 📝 Registro de auditoría
+        createdById: requesterId,
+        updatedById: requesterId,
       },
     });
 
-    console.log(`✅ Evaluación creada ID: ${nueva.id}`);
+    console.log(`✅ Evaluación creada por ${requesterId} ID: ${nueva.id}`);
     return NextResponse.json(nueva, { status: 201 });
   } catch (error: any) {
     console.error("❌ Error al crear evaluación:", error);
     return NextResponse.json({ 
       error: "Error al crear evaluación", 
-      details: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      details: error.message 
     }, { status: 500 });
   }
 }
 
-// PUT - Actualizar evaluación
+// PUT - Actualizar evaluación con auditoría
 export async function PUT(req: Request) {
   try {
-    // 🛡️ INICIO BLINDAJE DE SEGURIDAD
     const session = await getServerSession(authOptions);
     const role = session?.user?.role?.toUpperCase();
+    const requesterId = session?.user?.id;
 
     if (role !== "ADMIN" && role !== "SUPERVISOR") {
-      return NextResponse.json({ error: "No tienes permisos para editar evaluaciones" }, { status: 403 });
+      return NextResponse.json({ error: "No tienes permisos" }, { status: 403 });
     }
-    // 🛡️ FIN BLINDAJE
 
     const body = await req.json();
     const { id, titulo, link } = body;
 
-    console.log("📝 Actualizando evaluación:", { id, titulo, link });
+    if (!id) return NextResponse.json({ error: "ID es requerido" }, { status: 400 });
+    if (!titulo || !titulo.trim()) return NextResponse.json({ error: "El título es obligatorio" }, { status: 400 });
 
-    if (!id) {
-      return NextResponse.json({ error: "ID es requerido" }, { status: 400 });
-    }
+    // Verificar existencia y que no esté eliminado
+    const existe = await prisma.evaluacion.findFirst({
+      where: { id, deletedAt: null }
+    });
 
-    if (!titulo || !titulo.trim()) {
-      return NextResponse.json({ error: "El título es obligatorio" }, { status: 400 });
-    }
+    if (!existe) return NextResponse.json({ error: "Evaluación no encontrada" }, { status: 404 });
 
     const actualizada = await prisma.evaluacion.update({
       where: { id: id },
       data: {
         titulo: titulo.trim(),
         descripcion: link || "", 
+        updatedById: requesterId, // 📝 Registro de quién editó
       },
     });
 
-    console.log(`✅ Evaluación actualizada ID: ${actualizada.id}`);
+    console.log(`✅ Evaluación actualizada por ${requesterId} ID: ${actualizada.id}`);
     return NextResponse.json(actualizada);
   } catch (error: any) {
     console.error("❌ Error al actualizar evaluación:", error);
-    return NextResponse.json({ 
-      error: "Error al actualizar", 
-      details: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    }, { status: 500 });
+    return NextResponse.json({ error: "Error al actualizar" }, { status: 500 });
   }
 }
 
-// DELETE - Eliminar evaluación
+// DELETE - Borrado Lógico (Soft Delete)
 export async function DELETE(req: Request) {
   try {
-    // 🛡️ INICIO BLINDAJE DE SEGURIDAD
     const session = await getServerSession(authOptions);
     const role = session?.user?.role?.toUpperCase();
+    const requesterId = session?.user?.id;
 
     if (role !== "ADMIN" && role !== "SUPERVISOR") {
-      return NextResponse.json({ error: "No tienes permisos para eliminar evaluaciones" }, { status: 403 });
+      return NextResponse.json({ error: "No tienes permisos" }, { status: 403 });
     }
-    // 🛡️ FIN BLINDAJE
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
-    console.log("🗑️ Eliminando evaluación ID:", id);
+    if (!id) return NextResponse.json({ error: "ID es requerido" }, { status: 400 });
 
-    if (!id) {
-      return NextResponse.json({ error: "ID es requerido" }, { status: 400 });
-    }
-
-    const evaluacion = await prisma.evaluacion.findUnique({
-      where: { id: id },
+    const existe = await prisma.evaluacion.findFirst({
+      where: { id, deletedAt: null }
     });
 
-    if (!evaluacion) {
-      return NextResponse.json({ error: "Evaluación no encontrada" }, { status: 404 });
-    }
+    if (!existe) return NextResponse.json({ error: "Evaluación no encontrada" }, { status: 404 });
 
-    await prisma.evaluacion.delete({ where: { id: id } });
-    console.log(`✅ Evaluación eliminada: ${evaluacion.titulo}`);
-    return NextResponse.json({ message: "Evaluación eliminada correctamente" });
+    // 🗑️ Soft Delete: Solo marcamos fecha y autor
+    await prisma.evaluacion.update({
+      where: { id: id },
+      data: {
+        deletedAt: new Date(),
+        deletedById: requesterId,
+        activa: false // Desactivamos al borrar
+      }
+    });
+
+    console.log(`🗑️ Evaluación marcada como eliminada por ${requesterId}: ${existe.titulo}`);
+    return NextResponse.json({ message: "Evaluación eliminada correctamente (Soft Delete)" });
   } catch (error: any) {
     console.error("❌ Error al eliminar:", error);
-    return NextResponse.json({ 
-      error: "Error al eliminar", 
-      details: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    }, { status: 500 });
+    return NextResponse.json({ error: "Error al eliminar" }, { status: 500 });
   }
 }
