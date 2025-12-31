@@ -29,11 +29,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
-import { ChevronDown, Filter, Edit, Trash2, Search, Plus, X, Pin as PinIcon, Loader2, ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronDown, Filter, Edit, Trash2, Search, Plus, X, Pin as PinIcon, Loader2, ChevronLeft, ChevronRight, CheckCircle2, XCircle, AlertTriangle } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { format } from "date-fns"
-// Componente BreadcrumbNav
-// Componente BreadcrumbNav
+import { Switch } from "@/components/ui/switch" 
+
 function BreadcrumbNav({ current }: { current: string }) {
   return (
     <div className="text-sm text-gray-600 mb-4">
@@ -84,19 +83,24 @@ export default function Page() {
   const [usersFiltrados, setUsersFiltrados] = useState<User[]>([])
   const [busqueda, setBusqueda] = useState("")
   const [filtroDepto, setFiltroDepto] = useState("todos")
-  const [filtroEstado, setFiltroEstado] = useState("todos")
-  const [filtrosColumna, setFiltrosColumna] = useState<Record<string, string[]>>({})
+  const [filtroEstado, setFiltroEstado] = useState("activos") 
   const [cabecerasFijadas, setCabecerasFijadas] = useState(false)
-  const [paginaActual, setPaginaActual] = useState(1) // Nueva línea
+  const [paginaActual, setPaginaActual] = useState(1)
+  
+  // Estados para diálogos
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  
+  // ✅ NUEVOS ESTADOS PARA LA VENTANA DE ERROR DE RUT REPETIDO
+  const [isErrorDialogOpen, setIsErrorDialogOpen] = useState(false)
+  const [errorDialogMessage, setErrorDialogMessage] = useState("")
+
   const [userActual, setUserActual] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [departamentos, setDepartamentos] = useState<{ id: string; nombre: string }[]>([])
   const [showCrearDepartamento, setShowCrearDepartamento] = useState(false)
   const [nuevoDepartamentoNombre, setNuevoDepartamentoNombre] = useState("")
 
-  // ampliar formData para usar departamentoId, direccion, fechaNacimiento y role
   const [formData, setFormData] = useState({
     id: "",
     nombre: "",
@@ -104,11 +108,12 @@ export default function Page() {
     rut: "",
     email: "",
     telefono: "",
-    departamentoId: "", // ahora guardamos id
+    departamentoId: "",
     especialidad: "",
     direccion: "",
     fechaNacimiento: "",
     role: "docente",
+    estado: "ACTIVO",
   })
 
   const initialForm = {
@@ -123,31 +128,22 @@ export default function Page() {
     direccion: "",
     fechaNacimiento: "",
     role: "docente",
+    estado: "ACTIVO",
   }
 
-  // Función para mapear estado de BD a estado UI
   const mapearEstadoCurso = (estadoBD: string): string => {
     switch (estadoBD) {
-      case "APROBADO":
-        return "Aprobado"
-      case "REPROBADO":
-        return "No Aprobado"
-      case "INSCRITO":
-        return "En Curso"
-      case "NO_INSCRITO":
-        return "No Inscrito"
-      default:
-        return "No Inscrito"
+      case "APROBADO": return "Aprobado"
+      case "REPROBADO": return "No Aprobado"
+      case "INSCRITO": return "En Curso"
+      default: return "No Inscrito"
     }
   }
 
-  // Función para mapear nombre de curso a clave del objeto
   const mapearNombreCurso = (nombreCurso: string): keyof Cursos | null => {
     const nombre = nombreCurso.toLowerCase().trim()
-    
     if (nombre.includes("modelo educativo")) return "modeloEducativo"
-    if (nombre.includes("perspectiva") && nombre.includes("género")) return "perspectivaGenero"
-    if (nombre.includes("perspectiva") && nombre.includes("genero")) return "perspectivaGenero"
+    if (nombre.includes("perspectiva") && (nombre.includes("género") || nombre.includes("genero"))) return "perspectivaGenero"
     if (nombre.includes("neurodiversidad") || nombre.includes("inclusión") || nombre.includes("inclusion")) return "neurodiversidadInclusion"
     if (nombre.includes("metodologías activas") || nombre.includes("metodologias activas")) return "metodologiasActivas"
     if (nombre.includes("evaluación") || nombre.includes("evaluacion")) return "evaluacion"
@@ -155,67 +151,33 @@ export default function Page() {
     if (nombre === "dedu" || nombre.includes("dedu")) return "dedu"
     if (nombre === "didu" || nombre.includes("didu")) return "didu"
     if (nombre.includes("concurso") || nombre.includes("investigación") || nombre.includes("investigacion")) return "concursosInvestigacion"
-    if (nombre.includes("a+s") || nombre === "a+s" || nombre.includes("aprendizaje") && nombre.includes("servicio")) return "aS"
+    if (nombre.includes("a+s") || nombre === "a+s" || (nombre.includes("aprendizaje") && nombre.includes("servicio"))) return "aS"
     if (nombre === "stem" || nombre.includes("stem")) return "stem"
     if (nombre === "coil" || nombre.includes("coil")) return "coil"
     if (nombre.includes("didáctica") || nombre.includes("didactica")) return "didactica"
-    
     return null
   }
 
-  // Fetch inicial de usuarios
   const fetchUsers = async () => {
     try {
-      console.log("🔄 Fetching usuarios...")
-      const res = await fetch("/api/users")
-      
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`)
-      }
-      
+      setIsLoading(true)
+      const res = await fetch("/api/users?estado=todos") 
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
       const dataRaw = await res.json()
-      console.log(`📥 Datos recibidos: ${dataRaw.length} docentes`)
 
       const data: User[] = dataRaw.map((docente: any) => {
-        // Inicializar todos los cursos en "No Inscrito"
         const cursos: Cursos = {
-          modeloEducativo: "No Inscrito",
-          perspectivaGenero: "No Inscrito",
-          neurodiversidadInclusion: "No Inscrito",
-          metodologiasActivas: "No Inscrito",
-          evaluacion: "No Inscrito",
-          planificacionEnsenanza: "No Inscrito",
-          dedu: "No Inscrito",
-          didu: "No Inscrito",
-          concursosInvestigacion: "No Inscrito",
-          aS: "No Inscrito",
-          stem: "No Inscrito",
-          coil: "No Inscrito",
-          didactica: "No Inscrito",
+          modeloEducativo: "No Inscrito", perspectivaGenero: "No Inscrito", neurodiversidadInclusion: "No Inscrito",
+          metodologiasActivas: "No Inscrito", evaluacion: "No Inscrito", planificacionEnsenanza: "No Inscrito",
+          dedu: "No Inscrito", didu: "No Inscrito", concursosInvestigacion: "No Inscrito",
+          aS: "No Inscrito", stem: "No Inscrito", coil: "No Inscrito", didactica: "No Inscrito",
         }
 
-        // Debug: Log inscripciones del docente
-        console.log(`👤 ${docente.name} ${docente.apellido}: ${docente.inscripciones?.length || 0} inscripciones`)
-
-        // Procesar inscripciones
         if (docente.inscripciones && Array.isArray(docente.inscripciones)) {
           docente.inscripciones.forEach((insc: any) => {
-            if (!insc.curso || !insc.curso.nombre) {
-              console.warn("⚠️ Inscripción sin curso:", insc)
-              return
-            }
-
-            const nombreCurso = insc.curso.nombre
-            const estadoBD = insc.estado || "NO_INSCRITO"
-            const claveCurso = mapearNombreCurso(nombreCurso)
-            const estadoUI = mapearEstadoCurso(estadoBD)
-
-            console.log(`  📚 ${nombreCurso} → ${claveCurso} → ${estadoUI}`)
-
-            if (claveCurso) {
-              cursos[claveCurso] = estadoUI
-            } else {
-              console.warn(`⚠️ No se pudo mapear el curso: "${nombreCurso}"`)
+            if (insc.curso?.nombre) {
+              const claveCurso = mapearNombreCurso(insc.curso.nombre)
+              if (claveCurso) cursos[claveCurso] = mapearEstadoCurso(insc.estado || "NO_INSCRITO")
             }
           })
         }
@@ -232,78 +194,53 @@ export default function Page() {
           estado: docente.estado === "ACTIVO" ? "Activo" : "Inactivo",
           cursos,
           direccion: docente.direccion ?? undefined,
-          fechaNacimiento: docente.fechaNacimiento ? new Date(docente.fechaNacimiento).toISOString().slice(0,10) : undefined,
+          fechaNacimiento: docente.fechaNacimiento ? new Date(docente.fechaNacimiento).toISOString().slice(0, 10) : undefined,
           role: docente.role ?? "docente",
+          telefono: docente.telefono ?? "",
         }
       })
-
-      console.log("✅ Usuarios procesados:", data.length)
       setUsers(data)
       setUsersFiltrados(data)
     } catch (error: any) {
-      console.error("❌ Error al cargar docentes:", error)
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar los docentes: " + error.message,
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: error.message, variant: "destructive" })
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  useEffect(() => {
-    fetchUsers()
-  }, [])
+  useEffect(() => { fetchUsers() }, [])
 
-  // Cargar departamentos
   useEffect(() => {
     async function fetchDepartamentos() {
-      try {
-        const res = await fetch("/api/departamentos")
-        if (!res.ok) throw new Error("No se pudieron cargar departamentos")
-        const data = await res.json()
-        setDepartamentos(data)
-      } catch (err) {
-        console.error(err)
-      }
+      const res = await fetch("/api/departamentos")
+      if (res.ok) setDepartamentos(await res.json())
     }
     fetchDepartamentos()
   }, [])
 
-  // Aplicar filtros
   useEffect(() => {
     let resultado = users
-
     if (busqueda) {
       resultado = resultado.filter((u) =>
-        `${u.nombre} ${u.apellido} ${u.rut} ${u.email}`
-          .toLowerCase()
-          .includes(busqueda.toLowerCase())
+        `${u.nombre} ${u.apellido} ${u.rut} ${u.email}`.toLowerCase().includes(busqueda.toLowerCase())
       )
     }
-
     if (filtroDepto !== "todos") {
       resultado = resultado.filter((u) => u.departamento === filtroDepto)
     }
-
-    if (filtroEstado !== "todos") {
-      resultado = resultado.filter((u) => u.estado === filtroEstado)
+    if (filtroEstado === "activos") {
+      resultado = resultado.filter((u) => u.estado === "Activo")
+    } else if (filtroEstado === "inactivos") {
+      resultado = resultado.filter((u) => u.estado === "Inactivo")
     }
-
     setUsersFiltrados(resultado)
-    setPaginaActual(1) // Vuelve a página 1 al filtrar
+    setPaginaActual(1)
   }, [busqueda, filtroDepto, filtroEstado, users])
 
-  // Calcular datos de la página actual
   const indiceInicial = (paginaActual - 1) * ITEMS_POR_PAGINA
   const indiceFinal = indiceInicial + ITEMS_POR_PAGINA
   const usuariosPaginados = usersFiltrados.slice(indiceInicial, indiceFinal)
   const totalPaginas = Math.ceil(usersFiltrados.length / ITEMS_POR_PAGINA)
-
-  const tieneFiltroPorColumna = (col: string) => filtrosColumna[col]?.length > 0
-
-  const handleClickColumna = (col: string, e: React.MouseEvent) => {
-    // Lógica de filtros por columna (implementar después si es necesario)
-  }
 
   const handleNuevoDocente = () => {
     setUserActual(null)
@@ -313,7 +250,6 @@ export default function Page() {
   }
 
   const handleEditarDocente = (user: User) => {
-    console.log("handleEditarDocente called", user) // added log
     setUserActual(user)
     setFormData({
       id: user.id,
@@ -327,6 +263,7 @@ export default function Page() {
       direccion: user.direccion || "",
       fechaNacimiento: user.fechaNacimiento || "",
       role: user.role || "docente",
+      estado: user.estado === "Activo" ? "ACTIVO" : "INACTIVO", 
     })
     setIsDialogOpen(true)
   }
@@ -339,10 +276,6 @@ export default function Page() {
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setFormData({ ...formData, [name]: value })
-  }
-
-  const handleSelectDepartamento = (id: string) => {
-    setFormData({ ...formData, departamentoId: id })
   }
 
   const handleCrearDepartamento = async () => {
@@ -365,67 +298,48 @@ export default function Page() {
   }
 
   const handleGuardarDocente = async () => {
-    // Validación de campos obligatorios
     if (!formData.nombre || !formData.apellido || !formData.rut || !formData.email) {
       toast({ title: "Error", description: "Complete los campos obligatorios", variant: "destructive" })
       return
     }
-
     setIsLoading(true)
     try {
-      let res: Response
-      if (userActual) {
-        res = await fetch("/api/users", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: formData.id,
-            nombre: formData.nombre,
-            apellido: formData.apellido,
-            rut: formData.rut,
-            email: formData.email,
-            telefono: formData.telefono || null,
-            departamentoId: formData.departamentoId || null,
-            direccion: formData.direccion || null,
-            fechaNacimiento: formData.fechaNacimiento || null,
-            especialidad: formData.especialidad || null,
-            role: formData.role || "docente",
-          }),
-        })
-      } else {
-        res = await fetch("/api/users", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            nombre: formData.nombre,
-            apellido: formData.apellido,
-            rut: formData.rut,
-            email: formData.email,
-            telefono: formData.telefono || null,
-            departamentoId: formData.departamentoId || null,
-            direccion: formData.direccion || null,
-            fechaNacimiento: formData.fechaNacimiento || null,
-            especialidad: formData.especialidad || null,
-            role: formData.role || "docente",
-            password: "temporal123",
-          }),
-        })
+      const payload = {
+        ...formData,
+        departamentoId: (formData.departamentoId === "" || formData.departamentoId === "none") ? null : formData.departamentoId,
+        fechaNacimiento: formData.fechaNacimiento ? new Date(formData.fechaNacimiento).toISOString() : null,
+        direccion: formData.direccion || null,
+        especialidad: formData.especialidad || null,
+        telefono: formData.telefono || null,
       }
 
-      const payload = await res.json().catch(() => ({}))
+      const method = userActual ? "PUT" : "POST"
+      const url = userActual ? `/api/users?id=${formData.id}` : "/api/users"
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+
+      const payloadRes = await res.json().catch(() => ({}))
+
+      // 🛡️ MANEJO DE ERROR 409 (RUT O EMAIL REPETIDO)
       if (!res.ok) {
-        throw new Error(payload.error || payload.message || `HTTP ${res.status}`)
+        if (res.status === 409) {
+          // ✅ ABRIMOS LA VENTANA DE ERROR ESPECÍFICA
+          setErrorDialogMessage(payloadRes.error || "Ya existe un docente registrado con este RUT o Email.")
+          setIsErrorDialogOpen(true)
+          return; 
+        }
+        throw new Error(payloadRes.error || "Error al procesar la solicitud")
       }
 
-      // éxito: recargar lista, cerrar y resetear formulario
       await fetchUsers()
       setIsDialogOpen(false)
-      setUserActual(null)
-      setFormData(initialForm)
-      setShowCrearDepartamento(false)
       toast({ title: "Éxito", description: userActual ? "Docente actualizado" : "Docente creado" })
     } catch (err: any) {
-      toast({ title: "Error", description: err.message || "Error en la operación", variant: "destructive" })
+      toast({ title: "Error", description: err.message, variant: "destructive" })
     } finally {
       setIsLoading(false)
     }
@@ -433,31 +347,15 @@ export default function Page() {
 
   const handleEliminarDocente = async () => {
     if (!userActual) return
-
     setIsLoading(true)
     try {
-      const res = await fetch(`/api/users?id=${userActual.id}`, {
-        method: "DELETE",
-      })
-
-      if (!res.ok) {
-        const error = await res.json()
-        throw new Error(error.error || "Error al eliminar")
-      }
-
-      toast({
-        title: "Éxito",
-        description: "Docente eliminado correctamente",
-      })
-
+      const res = await fetch(`/api/users?id=${userActual.id}`, { method: "DELETE" })
+      if (!res.ok) throw new Error("No se pudo eliminar")
+      toast({ title: "Éxito", description: "Docente dado de baja (Inactivo)" })
       setIsDeleteDialogOpen(false)
-      await fetchUsers() // Recargar la tabla
+      await fetchUsers()
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: error.message, variant: "destructive" })
     } finally {
       setIsLoading(false)
     }
@@ -471,440 +369,260 @@ export default function Page() {
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-800">Gestión Docente</h1>
           <Button onClick={handleNuevoDocente} className="bg-blue-600 hover:bg-blue-700">
-            <Plus className="mr-2 h-4 w-4" />
-            Nuevo Docente
+            <Plus className="mr-2 h-4 w-4" /> Nuevo Docente
           </Button>
         </div>
 
-        {/* Barra de búsqueda y filtros */}
         <div className="flex flex-col md:flex-row gap-4 mb-6">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-            <Input
-              placeholder="Buscar por nombre, apellido, RUT o email..."
-              className="pl-10"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-            />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Input placeholder="Buscar docente..." className="pl-10" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              className="flex items-center"
-              onClick={() => setCabecerasFijadas(!cabecerasFijadas)}
-            >
-              <PinIcon className="mr-2 h-4 w-4" />
-              {cabecerasFijadas ? "Desfijar Cabecera" : "Fijar Cabecera"}
+            <Button variant="outline" size="sm" onClick={() => setCabecerasFijadas(!cabecerasFijadas)}>
+              <PinIcon className="mr-2 h-4 w-4" /> {cabecerasFijadas ? "Desfijar Cabecera" : "Fijar Cabecera"}
             </Button>
-            <Button
-              variant="outline"
-              className="flex items-center"
-              onClick={() => {
-                setBusqueda("")
-                setFiltroDepto("todos")
-                setFiltroEstado("todos")
-                setFiltrosColumna({})
-              }}
-            >
-              <X className="mr-2 h-4 w-4" />
-              Limpiar filtros
+            
+            <Select value={filtroEstado} onValueChange={setFiltroEstado}>
+              <SelectTrigger className="w-[140px]">
+                <Filter className="mr-2 h-4 w-4" />
+                <SelectValue placeholder="Estado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="activos">Solo Activos</SelectItem>
+                <SelectItem value="inactivos">Solo Inactivos</SelectItem>
+                <SelectItem value="todos">Ver Todos</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm"><Filter className="mr-2 h-4 w-4" /> Depto.</Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="bg-white">
+                <DropdownMenuItem onClick={() => setFiltroDepto("todos")}>Todos</DropdownMenuItem>
+                {departamentos.map(d => <DropdownMenuItem key={d.id} onClick={() => setFiltroDepto(d.nombre)}>{d.nombre}</DropdownMenuItem>)}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button variant="outline" size="icon" onClick={() => { setBusqueda(""); setFiltroDepto("todos"); setFiltroEstado("activos"); }}>
+              <X className="h-4 w-4" />
             </Button>
-            {departamentos.length > 0 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="flex items-center">
-                    <Filter className="mr-2 h-4 w-4" />
-                    Departamento
-                    <ChevronDown className="ml-2 h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="bg-white shadow-md">
-                  <DropdownMenuItem onClick={() => setFiltroDepto("todos")}>Todos</DropdownMenuItem>
-                  {departamentos.map((depto) => (
-                    <DropdownMenuItem key={depto.id} onClick={() => setFiltroDepto(depto.nombre)}>
-                      {depto.nombre}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
           </div>
         </div>
 
-        {/* Tabla de docentes */}
         <div className={`border rounded-md ${cabecerasFijadas ? "max-h-[70vh] overflow-y-auto" : "overflow-x-auto"}`}>
           <Table>
             <TableHeader className={cabecerasFijadas ? "sticky top-0 bg-white z-10" : ""}>
               <TableRow>
-                <TableHead rowSpan={3} className="cursor-pointer border border-gray-300">
-                  Nombre
-                </TableHead>
-                <TableHead rowSpan={3} className="cursor-pointer border border-gray-300">
-                  RUT
-                </TableHead>
-                <TableHead rowSpan={3} className="cursor-pointer border border-gray-300">
-                  Email
-                </TableHead>
-                <TableHead rowSpan={3} className="cursor-pointer border border-gray-300">
-                  Departamento
-                </TableHead>
-                <TableHead rowSpan={3} className="text-center border border-gray-300">
-                  Perfil
-                </TableHead>
-                <TableHead colSpan={1} className="text-center border border-gray-300">
-                  INICIAL
-                </TableHead>
-                <TableHead colSpan={9} className="text-center border border-gray-300">
-                  INTERMEDIO
-                </TableHead>
-                <TableHead colSpan={3} className="text-center border border-gray-300">
-                  AVANZADO
-                </TableHead>
-                <TableHead rowSpan={3} className="text-center border border-gray-300">
-                  Nivel
-                </TableHead>
-                <TableHead rowSpan={3} className="text-right border border-gray-300">
-                  Acciones
-                </TableHead>
+                <TableHead rowSpan={3} className="border border-gray-300">Nombre</TableHead>
+                <TableHead rowSpan={3} className="border border-gray-300 text-center">RUT</TableHead>
+                <TableHead rowSpan={3} className="border border-gray-300">Email</TableHead>
+                <TableHead rowSpan={3} className="border border-gray-300">Departamento</TableHead>
+                <TableHead rowSpan={3} className="border border-gray-300 text-center">Estado</TableHead>
+                <TableHead rowSpan={3} className="border border-gray-300 text-center">Perfil</TableHead>
+                <TableHead colSpan={1} className="text-center border border-gray-300 bg-gray-50 text-[11px] font-bold">INICIAL</TableHead>
+                <TableHead colSpan={9} className="text-center border border-gray-300 bg-gray-50 text-[11px] font-bold">INTERMEDIO</TableHead>
+                <TableHead colSpan={3} className="text-center border border-gray-300 bg-gray-50 text-[11px] font-bold">AVANZADO</TableHead>
+                <TableHead rowSpan={3} className="text-center border border-gray-300">Nivel</TableHead>
+                <TableHead rowSpan={3} className="text-right border border-gray-300">Acciones</TableHead>
               </TableRow>
               <TableRow>
-                <TableHead colSpan={1} className="text-center border border-gray-300">
-                  MODELO EDUCATIVO
-                </TableHead>
-                <TableHead colSpan={2} className="text-center border border-gray-300">
-                  AMBIENTES PROPICIOS
-                </TableHead>
-                <TableHead colSpan={2} className="text-center border border-gray-300">
-                  ENSEÑANZA EN AULA
-                </TableHead>
-                <TableHead colSpan={1} className="text-center border border-gray-300">
-                  PLANIFICACIÓN
-                </TableHead>
-                <TableHead colSpan={4} className="text-center border border-gray-300">
-                  REFLEXIÓN DOCENTE
-                </TableHead>
-                <TableHead colSpan={2} className="text-center border border-gray-300">
-                  METODOLOGÍAS VINCULADAS
-                </TableHead>
-                <TableHead colSpan={1} className="text-center border border-gray-300">
-                  DIDÁCTICA
-                </TableHead>
+                <TableHead className="text-center border border-gray-300 text-[10px]">MODELO EDUCATIVO</TableHead>
+                <TableHead colSpan={2} className="text-center border border-gray-300 text-[10px]">AMBIENTES PROPICIOS</TableHead>
+                <TableHead colSpan={2} className="text-center border border-gray-300 text-[10px]">ENSEÑANZA EN AULA</TableHead>
+                <TableHead className="text-center border border-gray-300 text-[10px]">PLANIFICACIÓN</TableHead>
+                <TableHead colSpan={4} className="text-center border border-gray-300 text-[10px]">REFLEXIÓN DOCENTE</TableHead>
+                <TableHead colSpan={2} className="text-center border border-gray-300 text-[10px]">METODOLOGÍAS VINCULADAS</TableHead>
+                <TableHead className="text-center border border-gray-300 text-[10px]">DIDÁCTICA</TableHead>
               </TableRow>
               <TableRow>
-                <TableHead className="text-center border border-gray-300">Modelo Educativo</TableHead>
-                <TableHead className="text-center border border-gray-300">Perspectiva de género</TableHead>
-                <TableHead className="text-center border border-gray-300">Neurodiversidad e Inclusión</TableHead>
-                <TableHead className="text-center border border-gray-300">Metodologías Activas</TableHead>
-                <TableHead className="text-center border border-gray-300">Evaluación</TableHead>
-                <TableHead className="text-center border border-gray-300">Planificación</TableHead>
-                <TableHead className="text-center border border-gray-300">DEDU</TableHead>
-                <TableHead className="text-center border border-gray-300">DIDU</TableHead>
-                <TableHead className="text-center border border-gray-300">Concursos</TableHead>
-                <TableHead className="text-center border border-gray-300">A+S</TableHead>
-                <TableHead className="text-center border border-gray-300">STEM</TableHead>
-                <TableHead className="text-center border border-gray-300">COIL</TableHead>
-                <TableHead className="text-center border border-gray-300">DIDÁCTICA</TableHead>
+                {["Mod.", "Gén.", "Incl.", "Act.", "Eval.", "Plan.", "DEDU", "DIDU", "Conc.", "A+S", "STEM", "COIL", "Didác."].map(h => (
+                  <TableHead key={h} className="text-center border border-gray-300 text-[9px] p-1">{h}</TableHead>
+                ))}
               </TableRow>
             </TableHeader>
             <TableBody>
               {usuariosPaginados.length > 0 ? (
                 usuariosPaginados.map((docente) => (
-                  <TableRow key={docente.id}>
-                    <TableCell className="border border-gray-200">{`${docente.nombre} ${docente.apellido}`}</TableCell>
-                    <TableCell className="border border-gray-200">{docente.rut}</TableCell>
-                    <TableCell className="border border-gray-200">{docente.email}</TableCell>
-                    <TableCell className="border border-gray-200">{docente.departamento || "-"}</TableCell>
+                  <TableRow key={docente.id} className={docente.estado === "Inactivo" ? "bg-gray-50 opacity-60" : ""}>
+                    <TableCell className="border border-gray-200 text-xs">{`${docente.nombre} ${docente.apellido}`}</TableCell>
+                    <TableCell className="border border-gray-200 text-center text-xs font-mono">{docente.rut}</TableCell>
+                    <TableCell className="border border-gray-200 text-xs">{docente.email}</TableCell>
+                    <TableCell className="border border-gray-200 text-xs">{docente.departamento || "-"}</TableCell>
+                    
                     <TableCell className="border border-gray-200 text-center">
-                      <Link href={`/dashboard/perfil-docente/${docente.id}`} className="text-blue-600 hover:text-blue-800 underline">
+                      {docente.estado === "Activo" ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700 border border-green-200 uppercase">
+                          <CheckCircle2 className="mr-1 h-3 w-3" /> Activo
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600 border border-gray-200 uppercase">
+                          <XCircle className="mr-1 h-3 w-3" /> Inactivo
+                        </span>
+                      )}
+                    </TableCell>
+
+                    <TableCell className="border border-gray-200 text-center">
+                      <Link href={`/dashboard/perfil-docente/${docente.id}`} className="text-blue-600 hover:text-blue-800 underline text-[10px] font-bold uppercase">
                         Ver perfil
                       </Link>
                     </TableCell>
 
-                    {/* Cursos */}
-                    {Object.values(docente.cursos).map((curso, idx) => (
-                      <TableCell key={idx} className="border border-gray-200 text-center">
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
-                            curso === "Aprobado"
-                              ? "bg-green-100 text-green-800"
-                              : curso === "No Aprobado"
-                              ? "bg-red-100 text-red-800"
-                              : curso === "En Curso"
-                              ? "bg-yellow-100 text-yellow-800"
-                              : "bg-gray-100 text-gray-800"
-                          }`}
-                        >
-                          {curso}
-                        </span>
+                    {Object.values(docente.cursos).map((c, i) => (
+                      <TableCell key={i} className="border border-gray-200 text-center text-[9px] p-1">
+                        {c === "No Inscrito" ? (
+                          <span className="bg-gray-50 text-gray-400 px-2 py-0.5 rounded-sm font-bold border border-gray-100">-</span>
+                        ) : (
+                          <span className={`px-1 rounded ${
+                            c === "Aprobado" ? "bg-green-100 text-green-800" : 
+                            c === "En Curso" ? "bg-yellow-100 text-yellow-800" : 
+                            "bg-red-100 text-red-800"
+                          }`}>
+                            {c}
+                          </span>
+                        )}
                       </TableCell>
                     ))}
 
-                    {/* Nivel */}
                     <TableCell className="border border-gray-200 text-center">
                       {(() => {
-                        const c = docente.cursos
-                        const tieneNivelInicial = c.modeloEducativo === "Aprobado"
-                        const tieneAmbientesPropicios = c.perspectivaGenero === "Aprobado" || c.neurodiversidadInclusion === "Aprobado"
-                        const tieneEnsenanzaAula = c.metodologiasActivas === "Aprobado" || c.evaluacion === "Aprobado"
-                        const tienePlanificacion = c.planificacionEnsenanza === "Aprobado"
-                        const tieneReflexion = c.dedu === "Aprobado" || c.didu === "Aprobado" || c.concursosInvestigacion === "Aprobado" || c.aS === "Aprobado"
-                        const tieneNivelIntermedio = tieneNivelInicial && tieneAmbientesPropicios && tieneEnsenanzaAula && tienePlanificacion && tieneReflexion
-                        const tieneMetodologiasVinculadas = c.stem === "Aprobado" || c.coil === "Aprobado"
-                        const tieneDidactica = c.didactica === "Aprobado"
-                        const tieneNivelAvanzado = tieneNivelIntermedio && tieneMetodologiasVinculadas && tieneDidactica
-
-                        let nivel = "Sin nivel"
-                        let bgColorClass = "bg-gray-100 text-gray-800"
-                        if (tieneNivelAvanzado) {
-                          nivel = "Avanzado"
-                          bgColorClass = "bg-green-100 text-green-800"
-                        } else if (tieneNivelIntermedio) {
-                          nivel = "Intermedio"
-                          bgColorClass = "bg-blue-100 text-blue-800"
-                        } else if (tieneNivelInicial) {
-                          nivel = "Inicial"
-                          bgColorClass = "bg-orange-100 text-orange-800"
-                        }
-
-                        return <span className={`px-2 py-1 rounded text-xs font-medium ${bgColorClass}`}>{nivel}</span>
+                        const cur = docente.cursos;
+                        const inicial = cur.modeloEducativo === "Aprobado";
+                        const intermedio = inicial && cur.planificacionEnsenanza === "Aprobado" && (cur.dedu === "Aprobado" || cur.didu === "Aprobado");
+                        const avanzado = intermedio && (cur.stem === "Aprobado" || cur.coil === "Aprobado");
+                        const n = avanzado ? "Avanzado" : intermedio ? "Intermedio" : inicial ? "Inicial" : "Sin nivel";
+                        const col = avanzado ? "text-green-600" : intermedio ? "text-blue-600" : inicial ? "text-orange-600" : "text-gray-400";
+                        return <span className={`text-[10px] font-bold ${col}`}>{n}</span>
                       })()}
                     </TableCell>
 
-                    {/* Acciones */}
                     <TableCell className="border border-gray-200 text-right">
-                      {(docente.role !== "supervisor" || session?.user?.role?.toLowerCase() === "admin") ? (
-                        <>
-                          <Button variant="ghost" size="sm" onClick={() => handleEditarDocente(docente)}>
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleEliminarDialogo(docente)}>
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </>
-                      ) : (
-                        <span className="text-sm text-gray-500">—</span>
-                      )}
+                      <div className="flex justify-end gap-1 px-2">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleEditarDocente(docente)}><Edit className="h-3 w-3" /></Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500" onClick={() => handleEliminarDialogo(docente)}><Trash2 className="h-3 w-3" /></Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
               ) : (
-                <TableRow>
-                  <TableCell colSpan={20} className="text-center py-4 border border-gray-200">
-                    {busqueda || filtroDepto !== "todos" ? 
-                      "No se encontraron docentes con los filtros aplicados" :
-                      "No hay docentes registrados"
-                    }
-                  </TableCell>
-                </TableRow>
+                <TableRow><TableCell colSpan={25} className="text-center py-10 text-gray-400 border border-gray-200">No se encontraron docentes.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
         </div>
 
-        {/* Controles de paginación */}
-        <div className="flex items-center justify-between mt-6">
-          <div className="text-sm text-gray-600">
-            Mostrando {indiceInicial + 1} a {Math.min(indiceFinal, usersFiltrados.length)} de {usersFiltrados.length} docentes
-          </div>
+        <div className="flex items-center justify-between mt-6 text-xs text-gray-500 font-medium">
+          <div>Mostrando {indiceInicial + 1} a {Math.min(indiceFinal, usersFiltrados.length)} de {usersFiltrados.length} docentes</div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPaginaActual(Math.max(1, paginaActual - 1))}
-              disabled={paginaActual === 1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <div className="flex items-center gap-2">
-              {Array.from({ length: totalPaginas }, (_, i) => i + 1).map((num) => (
-                <Button
-                  key={num}
-                  variant={paginaActual === num ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setPaginaActual(num)}
-                  className="w-8"
-                >
-                  {num}
-                </Button>
-              ))}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPaginaActual(Math.min(totalPaginas, paginaActual + 1))}
-              disabled={paginaActual === totalPaginas}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+            <Button variant="outline" size="sm" onClick={() => setPaginaActual(p => Math.max(1, p - 1))} disabled={paginaActual === 1}><ChevronLeft className="h-4 w-4" /></Button>
+            <Button variant="outline" size="sm" onClick={() => setPaginaActual(p => Math.min(totalPaginas, p + 1))} disabled={paginaActual === totalPaginas}><ChevronRight className="h-4 w-4" /></Button>
           </div>
         </div>
       </div>
 
-      {/* Dialog de Crear/Editar Docente */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-md bg-white shadow-lg">
+        <DialogContent className="max-w-md bg-white">
           <DialogHeader>
-            <DialogTitle>{userActual ? "Editar Docente" : "Nuevo Docente"}</DialogTitle>
-            <DialogDescription>
-              Complete los datos del docente. Los campos marcados con * son obligatorios.
-            </DialogDescription>
+            <div className="flex justify-between items-center mr-8">
+              <DialogTitle>{userActual ? "Editar Perfil Docente" : "Registrar Nuevo Docente"}</DialogTitle>
+              <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-md border">
+                <Switch checked={formData.estado === "ACTIVO"} onCheckedChange={(checked) => setFormData({...formData, estado: checked ? "ACTIVO" : "INACTIVO"})} />
+                <span className={`text-[10px] font-bold ${formData.estado === "ACTIVO" ? "text-green-600" : "text-gray-400"}`}>{formData.estado}</span>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="nombre">Nombre *</Label>
-              <Input
-                id="nombre"
-                name="nombre"
-                value={formData.nombre}
-                onChange={handleFormChange}
-                placeholder="Juan"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="apellido">Apellido *</Label>
-              <Input
-                id="apellido"
-                name="apellido"
-                value={formData.apellido}
-                onChange={handleFormChange}
-                placeholder="Pérez"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="rut">RUT *</Label>
-              <Input
-                id="rut"
-                name="rut"
-                value={formData.rut}
-                onChange={handleFormChange}
-                placeholder="12.345.678-9"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="email">Email *</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                value={formData.email}
-                onChange={handleFormChange}
-                placeholder="juan.perez@universidad.cl"
-                required
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="telefono">Teléfono</Label>
-              <Input
-                id="telefono"
-                name="telefono"
-                value={formData.telefono}
-                onChange={handleFormChange}
-                placeholder="+56 9 1234 5678"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="departamento">Departamento</Label>
-              <Select value={formData.departamentoId || "none"} onValueChange={(v) => {
-                if (v === "__crear_nuevo__") {
-                  setShowCrearDepartamento(true)
-                } else {
-                  // "none" representa ninguno -> guardar cadena vacía
-                  setFormData({ ...formData, departamentoId: v === "none" ? "" : v })
-                }
-              }}>
-                <SelectTrigger id="departamento">
-                  <SelectValue placeholder="Selecciona departamento" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">-- ninguno --</SelectItem>
-                   {departamentos.map((d) => (
-                     <SelectItem key={d.id} value={d.id}>
-                       {d.nombre}
-                     </SelectItem>
-                   ))}
-                   <SelectItem value="__crear_nuevo__">
-                     + Crear nuevo departamento
-                   </SelectItem>
-                </SelectContent>
-              </Select>
-              {showCrearDepartamento && (
-                <div className="mt-2 flex gap-2">
-                  <Input
-                    placeholder="Nombre nuevo departamento"
-                    value={nuevoDepartamentoNombre}
-                    onChange={(e) => setNuevoDepartamentoNombre(e.target.value)}
-                  />
-                  <Button onClick={handleCrearDepartamento}>Crear</Button>
+          <div className="grid gap-3 py-2 text-xs">
+             <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1"><Label>Nombre *</Label><Input name="nombre" value={formData.nombre} onChange={handleFormChange} /></div>
+                <div className="space-y-1"><Label>Apellido *</Label><Input name="apellido" value={formData.apellido} onChange={handleFormChange} /></div>
+             </div>
+             <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1"><Label>RUT *</Label><Input name="rut" value={formData.rut} onChange={handleFormChange} /></div>
+                <div className="space-y-1"><Label>Email *</Label><Input name="email" type="email" value={formData.email} onChange={handleFormChange} /></div>
+             </div>
+             <div className="space-y-1">
+                <Label>Departamento</Label>
+                <Select value={formData.departamentoId || "none"} onValueChange={(v) => v === "__crear__" ? setShowCrearDepartamento(true) : setFormData({...formData, departamentoId: v === "none" ? "" : v})}>
+                  <SelectTrigger className="h-8"><SelectValue placeholder="Selecciona..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">-- ninguno --</SelectItem>
+                    {departamentos.map(d => <SelectItem key={d.id} value={d.id}>{d.nombre}</SelectItem>)}
+                    <SelectItem value="__crear__" className="text-blue-600 font-bold">+ Nuevo Depto.</SelectItem>
+                  </SelectContent>
+                </Select>
+             </div>
+             {showCrearDepartamento && (
+                <div className="flex gap-2 mt-1">
+                   <Input placeholder="Nombre depto..." value={nuevoDepartamentoNombre} onChange={e => setNuevoDepartamentoNombre(e.target.value)} />
+                   <Button size="sm" onClick={handleCrearDepartamento}>Crear</Button>
                 </div>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="direccion">Dirección</Label>
-              <Input id="direccion" name="direccion" value={formData.direccion} onChange={handleFormChange} />
-            </div>
-            <div>
-              <Label htmlFor="fechaNacimiento">Fecha de Nacimiento</Label>
-              <Input id="fechaNacimiento" name="fechaNacimiento" type="date" value={formData.fechaNacimiento} onChange={handleFormChange} />
-            </div>
-            <div>
-              <Label htmlFor="especialidad">Especialidad</Label>
-              <Input id="especialidad" name="especialidad" value={formData.especialidad} onChange={handleFormChange} />
-            </div>
-            <div>
-              <Label htmlFor="role">Role</Label>
-              <Select value={formData.role} onValueChange={(v) => setFormData({ ...formData, role: v })}>
-                <SelectTrigger id="role">
-                  <SelectValue placeholder="Selecciona role" />
-                </SelectTrigger>
-                <SelectContent className="bg-white shadow-md">
-                  <SelectItem value="docente">Docente</SelectItem>
-                  {session?.user?.role?.toLowerCase() === "admin" && (
-                    <SelectItem value="supervisor">Supervisor</SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
+             )}
+             <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1"><Label>Dirección</Label><Input name="direccion" value={formData.direccion} onChange={handleFormChange} /></div>
+                <div className="space-y-1"><Label>Nacimiento</Label><Input name="fechaNacimiento" type="date" value={formData.fechaNacimiento} onChange={handleFormChange} /></div>
+             </div>
+             <div className="space-y-1"><Label>Especialidad</Label><Input name="especialidad" value={formData.especialidad} onChange={handleFormChange} /></div>
+             <div className="space-y-1"><Label>Teléfono</Label><Input name="telefono" value={formData.telefono} onChange={handleFormChange} /></div>
+             <div className="space-y-1">
+                <Label>Rol</Label>
+                <Select value={formData.role} onValueChange={v => setFormData({...formData, role: v})}>
+                   <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                   <SelectContent>
+                      <SelectItem value="docente">Docente</SelectItem>
+                      {session?.user?.role?.toLowerCase() === "admin" && <SelectItem value="supervisor">Supervisor</SelectItem>}
+                   </SelectContent>
+                </Select>
+             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isLoading}>
-              Cancelar
-            </Button>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isLoading}>Cancelar</Button>
             <Button onClick={handleGuardarDocente} disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {userActual ? "Actualizar" : "Crear"}
+              {isLoading && <Loader2 className="mr-2 h-3 w-3 animate-spin" />} Guardar
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog de Confirmación de Eliminación */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="bg-white shadow-lg">
-           <DialogHeader>
-             <DialogTitle>Confirmar eliminación</DialogTitle>
-             <DialogDescription>
-               ¿Está seguro que desea eliminar al docente{" "}
-               <strong>
-                 {userActual?.nombre} {userActual?.apellido}
-               </strong>
-               ? Esta acción no se puede deshacer.
-             </DialogDescription>
-           </DialogHeader>
-           <DialogFooter>
-             <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)} disabled={isLoading}>
-               Cancelar
-             </Button>
-             <Button variant="destructive" onClick={handleEliminarDocente} disabled={isLoading}>
-               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-               Eliminar
-             </Button>
-           </DialogFooter>
+        <DialogContent className="bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 font-bold uppercase">Baja Administrativa</DialogTitle>
+            <DialogDescription className="pt-2">
+              ¿Confirmar la baja de <strong>{userActual?.nombre} {userActual?.apellido}</strong>?
+              <br /><br />
+              <span className="text-[10px] bg-amber-50 text-amber-800 p-2 rounded block border border-amber-200">
+                <strong>Auditoría:</strong> El registro pasará a estado <strong>inactivo</strong> para conservar el historial histórico.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)} disabled={isLoading}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleEliminarDocente} disabled={isLoading}>Confirmar Baja</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ✅ VENTANA DE ERROR PARA RUT O EMAIL REPETIDO (CON BOTÓN ACEPTAR) */}
+      <Dialog open={isErrorDialogOpen} onOpenChange={setIsErrorDialogOpen}>
+        <DialogContent className="max-w-[400px] bg-white">
+          <DialogHeader>
+            <div className="mx-auto bg-red-100 w-12 h-12 rounded-full flex items-center justify-center mb-4">
+              <AlertTriangle className="text-red-600 h-6 w-6" />
+            </div>
+            <DialogTitle className="text-center text-red-600 font-bold">Datos Duplicados</DialogTitle>
+            <DialogDescription className="text-center pt-2">
+              {errorDialogMessage}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-center">
+            <Button 
+              className="bg-red-600 hover:bg-red-700 text-white font-bold w-full" 
+              onClick={() => setIsErrorDialogOpen(false)}
+            >
+              ACEPTAR
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

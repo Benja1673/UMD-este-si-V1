@@ -25,12 +25,12 @@ async function sendTemporaryPasswordEmail(toEmail: string, temporaryPassword: st
     from: process.env.EMAIL_USER,
     to: toEmail,
     subject: "Credenciales de Acceso a la Plataforma UMD",
-    html: `<p>Hola,</p><p>Se ha creado o restablecido tu cuenta. Tu clave es: <strong>${temporaryPassword}</strong></p>`,
+    html: `<p>Hola,</p><p>Se ha creado o restablecido tu cuenta. Tu clave temporal es: <strong>${temporaryPassword}</strong></p><p>Te recomendamos cambiarla al iniciar sesión.</p>`,
   };
   try { await transporter.sendMail(mailOptions); } catch (error) { console.error("❌ Error envío correo:", error); }
 }
 
-// ✅ GET - Obtener usuarios con Auditoría, Jerarquía y Datos de Cursos
+// ✅ GET - Obtener usuarios con Auditoría, Jerarquía y Filtros
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -42,12 +42,18 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search");
+    const estadoParam = searchParams.get("estado"); // 'activos', 'inactivos', 'todos'
 
     const rolesVisibles = requesterRole === "ADMIN" ? ["supervisor", "docente"] : ["docente"];
+    
     const baseWhere: any = { 
       role: { in: rolesVisibles },
-      deletedAt: null 
+      deletedAt: null // Solo registros no borrados físicamente
     };
+
+    // Filtro de Estado Administrativo
+    if (estadoParam === "activos") baseWhere.estado = "ACTIVO";
+    else if (estadoParam === "inactivos") baseWhere.estado = "INACTIVO";
 
     if (search) {
       baseWhere.OR = [
@@ -63,16 +69,11 @@ export async function GET(request: Request) {
       select: {
         id: true, name: true, apellido: true, rut: true, email: true,
         telefono: true, especialidad: true, estado: true, role: true,
-        direccion: true, fechaNacimiento: true,
+        direccion: true, fechaNacimiento: true, departamentoId: true,
         departamento: { select: { id: true, nombre: true, codigo: true } },
-        // 🔄 Reintegración de inscripciones para el Frontend
         inscripciones: {
-          where: { deletedAt: null }, // Solo inscripciones activas
-          include: {
-            curso: {
-              select: { id: true, nombre: true, codigo: true, activo: true }
-            }
-          }
+          where: { deletedAt: null },
+          include: { curso: { select: { id: true, nombre: true, codigo: true, activo: true } } }
         }
       },
       orderBy: { apellido: "asc" },
@@ -84,33 +85,42 @@ export async function GET(request: Request) {
   }
 }
 
-// ✅ POST - Crear usuario con Auditoría
+// ✅ POST - Crear usuario con Conflicto (409) y Sanitización
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
-    const requesterRole = session?.user?.role?.toUpperCase();
     const requesterId = session?.user?.id;
 
     if (!session || !(await isAdminOrSupervisor(session))) {
-      return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
     const body = await request.json();
-    const { nombre, apellido, rut, email, telefono, departamentoId, role: tRole } = body;
-    const targetRole = tRole?.toLowerCase() || "docente";
+    const { nombre, apellido, rut, email, telefono, departamentoId, role, direccion, fechaNacimiento, especialidad } = body;
 
-    if (targetRole === "supervisor" && requesterRole !== "ADMIN") {
-      return NextResponse.json({ error: "Solo admins crean supervisores" }, { status: 403 });
-    }
+    // 🛡️ Validación de Duplicados (Conflict 409)
+    const existente = await prisma.user.findFirst({
+      where: { OR: [{ rut }, { email }] }
+    });
+    if (existente) return NextResponse.json({ error: "El RUT o Email ya existe" }, { status: 409 });
 
     const temporaryPassword = generateRandomPassword();
     const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
     const nuevo = await prisma.user.create({
       data: {
-        name: nombre, apellido, rut, email, telefono,
-        hashedPassword, role: targetRole, estado: "ACTIVO",
-        departamentoId,
+        name: nombre,
+        apellido,
+        rut,
+        email,
+        hashedPassword,
+        role: role || "docente",
+        estado: body.estado || "ACTIVO",
+        telefono: telefono || null,
+        especialidad: especialidad || null,
+        direccion: direccion || null,
+        fechaNacimiento: fechaNacimiento ? new Date(fechaNacimiento) : null,
+        departamentoId: (departamentoId === "none" || departamentoId === "") ? null : departamentoId,
         createdById: requesterId,
         updatedById: requesterId,
       },
@@ -120,66 +130,83 @@ export async function POST(request: Request) {
     await sendTemporaryPasswordEmail(email, temporaryPassword);
     return NextResponse.json(nuevo, { status: 201 });
   } catch (error) {
+    console.error("❌ Error POST:", error);
     return NextResponse.json({ error: "Error al crear" }, { status: 500 });
   }
 }
 
-// ✅ PUT - Actualizar con Jerarquía, Auditoría y Devolución de Datos
+// ✅ PUT - Actualizar con Sanitización Total y Soporte de ID URL/Body
 export async function PUT(request: Request) {
   try {
     const session = await getServerSession(authOptions);
     const requesterRole = session?.user?.role?.toUpperCase();
     const requesterId = session?.user?.id;
 
+    const { searchParams } = new URL(request.url);
+    const idFromUrl = searchParams.get("id");
+    
     const body = await request.json();
-    const { id, estado, role: targetRole, resetPassword, email, ...data } = body;
+    const userId = idFromUrl || body.id;
 
-    const usuarioAEditar = await prisma.user.findUnique({ where: { id } });
-    if (!usuarioAEditar) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    if (!userId) return NextResponse.json({ error: "ID requerido" }, { status: 400 });
 
-    // 🛡️ REGLA DE JERARQUÍA
-    const targetUserRole = usuarioAEditar.role.toUpperCase();
-    if (requesterRole === "SUPERVISOR" && targetUserRole !== "DOCENTE") {
-      return NextResponse.json({ error: "No tienes permiso para editar este nivel" }, { status: 403 });
+    const existente = await prisma.user.findUnique({ where: { id: userId } });
+    if (!existente) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+
+    // 🛡️ Jerarquía de edición
+    if (requesterRole === "SUPERVISOR" && existente.role.toUpperCase() !== "DOCENTE") {
+      return NextResponse.json({ error: "No puedes editar este nivel" }, { status: 403 });
     }
-    if (requesterRole === "ADMIN" && targetUserRole === "ADMIN" && requesterId !== id) {
-      return NextResponse.json({ error: "No puedes editar a otro Admin" }, { status: 403 });
-    }
+
+    // Verificar duplicados en otros usuarios
+    const { rut, email, resetPassword } = body;
+    const duplicado = await prisma.user.findFirst({
+      where: {
+        id: { not: userId },
+        OR: [{ rut }, { email }]
+      }
+    });
+    if (duplicado) return NextResponse.json({ error: "RUT o Email ya en uso por otro usuario" }, { status: 409 });
 
     let passwordData: any = {};
-    if (resetPassword || (email && email !== usuarioAEditar.email)) {
+    if (resetPassword || (email && email !== existente.email)) {
       const tempPass = generateRandomPassword();
       passwordData.hashedPassword = await bcrypt.hash(tempPass, 10);
-      await sendTemporaryPasswordEmail(email || usuarioAEditar.email, tempPass);
+      await sendTemporaryPasswordEmail(email || existente.email, tempPass);
     }
 
+    // ✅ SANITIZACIÓN: Convertir vacíos a null para que Prisma no falle
     const actualizado = await prisma.user.update({
-      where: { id },
+      where: { id: userId },
       data: {
-        ...data,
-        email,
-        estado,
-        role: targetRole,
+        name: body.nombre,
+        apellido: body.apellido,
+        rut: body.rut,
+        email: body.email,
+        role: body.role,
+        estado: body.estado,
+        telefono: body.telefono || null,
+        especialidad: body.especialidad || null,
+        direccion: body.direccion || null,
+        fechaNacimiento: body.fechaNacimiento ? new Date(body.fechaNacimiento) : null,
+        departamentoId: (body.departamentoId === "none" || body.departamentoId === "") ? null : body.departamentoId,
         ...passwordData,
         updatedById: requesterId
       },
-      include: { 
-        departamento: true,
-        inscripciones: { include: { curso: true } }
-      }
+      include: { departamento: true }
     });
 
     return NextResponse.json(actualizado);
   } catch (error) {
+    console.error("❌ Error PUT:", error);
     return NextResponse.json({ error: "Error al actualizar" }, { status: 500 });
   }
 }
 
-// ✅ DELETE - Borrado Lógico (Soft Delete)
+// ✅ DELETE - Soft Delete con Auditoría
 export async function DELETE(request: Request) {
   try {
     const session = await getServerSession(authOptions);
-    const requesterRole = session?.user?.role?.toUpperCase();
     const requesterId = session?.user?.id;
 
     if (!session || !(await isAdminOrSupervisor(session))) {
@@ -190,13 +217,6 @@ export async function DELETE(request: Request) {
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "ID requerido" }, { status: 400 });
 
-    const usuarioAEliminar = await prisma.user.findUnique({ where: { id } });
-    if (!usuarioAEliminar) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-
-    if (requesterRole === "SUPERVISOR" && usuarioAEliminar.role.toUpperCase() !== "DOCENTE") {
-      return NextResponse.json({ error: "No puedes eliminar este nivel" }, { status: 403 });
-    }
-
     await prisma.user.update({
       where: { id },
       data: {
@@ -206,7 +226,7 @@ export async function DELETE(request: Request) {
       }
     });
 
-    return NextResponse.json({ message: "Usuario eliminado lógicamente" });
+    return NextResponse.json({ message: "Usuario marcado como inactivo" });
   } catch (error) {
     return NextResponse.json({ error: "Error al eliminar" }, { status: 500 });
   }
