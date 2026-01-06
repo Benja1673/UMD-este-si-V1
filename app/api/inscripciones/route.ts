@@ -9,7 +9,10 @@ export async function GET(req: Request) {
     const cursoId = searchParams.get("cursoId");
 
     const where: any = {};
-    if (estado) where.estado = estado;
+    if (estado) {
+      // ✅ Hacemos que la búsqueda sea insensible a mayúsculas
+      where.estado = { equals: estado, mode: 'insensitive' };
+    }
     if (usuarioId) where.userId = usuarioId;
     if (cursoId) where.cursoId = cursoId;
 

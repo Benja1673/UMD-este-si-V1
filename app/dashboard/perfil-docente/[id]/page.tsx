@@ -1,3 +1,4 @@
+// app/dashboard/perfil-docente/[id]/page.tsx
 import ProfileCard, { Curso, UserProfile } from "@/components/profile-card"
 import { prisma } from "@/lib/prisma"
 import { getServerSession } from "next-auth/next"
@@ -10,24 +11,26 @@ interface ProfilePageProps {
 
 // Función auxiliar para convertir "INICIAL" -> "Inicial"
 function capitalizar(texto: string | null | undefined) {
-  if (!texto) return "Inicial"; // Valor por defecto
+  if (!texto) return "Inicial"; 
   return texto.charAt(0).toUpperCase() + texto.slice(1).toLowerCase();
 }
 
 // Función auxiliar para mapear el estado de la BD a lo que pide el ProfileCard
 function mapEstado(estadoDb: string): "Inscrito" | "Aprobado" | "Reprobado" {
-  switch (estadoDb) {
+  // Añadimos toUpperCase() por seguridad
+  switch (estadoDb?.toUpperCase()) {
     case "APROBADO":
       return "Aprobado";
     case "NO_APROBADO":
-    case "REPROBADO": // Por si acaso
+    case "REPROBADO":
       return "Reprobado";
     case "INSCRITO":
     case "EN_PROCESO":
     case "PENDIENTE_EVALUACION":
       return "Inscrito";
     default:
-      // "NO_INSCRITO" o cualquier cosa rara
+      // Ahora este caso solo se dará si hay algo realmente extraño,
+      // ya que los NO_INSCRITO vendrán filtrados desde la query.
       return "Inscrito";
   }
 }
@@ -43,18 +46,23 @@ export default async function ProfilePage(props: ProfilePageProps) {
   }
 
   // Validar rol: Supervisor, Admin, O si el usuario está viendo su propio perfil
-  const rol = session.user.role
+  const rol = session.user.role?.toLowerCase()
   const esSuPropioPerfil = session.user.id === id
   
   if (rol !== "supervisor" && rol !== "admin" && !esSuPropioPerfil) {
     return <div className="p-6 text-red-600">No autorizado para ver este perfil.</div>
   }
 
-  // Buscar docente por id en la tabla USER (Correcto)
+  // Buscar docente por id en la tabla USER
   const userDb = await prisma.user.findUnique({
     where: { id: id },
     include: {
       inscripciones: { 
+        // ✅ SOLUCIÓN: Filtramos para no mostrar cursos donde no está inscrito
+        where: {
+          deletedAt: null,
+          estado: { not: "NO_INSCRITO" }
+        },
         include: { 
           curso: { 
             include: { categoria: true } 
@@ -71,9 +79,6 @@ export default async function ProfilePage(props: ProfilePageProps) {
         <h2 className="text-xl font-bold text-red-600">Usuario no encontrado</h2>
         <p className="text-gray-600 mt-2">
            No se encontró un usuario con el ID: <span className="font-mono bg-gray-100 p-1">{id}</span>.
-        </p>
-        <p className="text-sm text-gray-500 mt-4">
-           Posible causa: El enlace proviene de una tabla antigua o el usuario fue eliminado.
         </p>
       </div>
     )
@@ -96,9 +101,7 @@ export default async function ProfilePage(props: ProfilePageProps) {
     nombre: i.curso.nombre ?? "Curso sin nombre",
     descripcion: i.curso.descripcion ?? "",
     categoria: i.curso.categoria?.nombre ?? "Sin categoría",
-    // Convertimos "INICIAL" a "Inicial" para que el componente visual no falle
     nivel: capitalizar(i.curso.nivel) as "Inicial" | "Intermedio" | "Avanzado",
-    // Usamos la función auxiliar para no marcar todo como reprobado
     estado: mapEstado(i.estado),
   }))
 
