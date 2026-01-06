@@ -99,6 +99,7 @@ export async function POST(request: Request) {
     const { nombre, apellido, rut, email, telefono, departamentoId, role, direccion, fechaNacimiento, especialidad } = body;
 
     // 🛡️ Validación de Duplicados (Conflict 409)
+    // Gracias al renombrado en el DELETE, aquí no chocará con usuarios eliminados
     const existente = await prisma.user.findFirst({
       where: { OR: [{ rut }, { email }] }
     });
@@ -158,7 +159,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "No puedes editar este nivel" }, { status: 403 });
     }
 
-    // Verificar duplicados en otros usuarios
+    // Verificar duplicados en otros usuarios activos
     const { rut, email, resetPassword } = body;
     const duplicado = await prisma.user.findFirst({
       where: {
@@ -175,7 +176,6 @@ export async function PUT(request: Request) {
       await sendTemporaryPasswordEmail(email || existente.email, tempPass);
     }
 
-    // ✅ SANITIZACIÓN: Convertir vacíos a null para que Prisma no falle
     const actualizado = await prisma.user.update({
       where: { id: userId },
       data: {
@@ -203,10 +203,11 @@ export async function PUT(request: Request) {
   }
 }
 
-// ✅ DELETE - Soft Delete con Auditoría
+// ✅ DELETE - Soft Delete con liberación de RUT y Email mediante Timestamp
 export async function DELETE(request: Request) {
   try {
     const session = await getServerSession(authOptions);
+    const requesterRole = session?.user?.role?.toUpperCase();
     const requesterId = session?.user?.id;
 
     if (!session || !(await isAdminOrSupervisor(session))) {
@@ -217,17 +218,38 @@ export async function DELETE(request: Request) {
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "ID requerido" }, { status: 400 });
 
+    // 1. Buscamos al usuario primero para obtener su RUT y Email actual
+    const usuarioAEliminar = await prisma.user.findUnique({ 
+      where: { id },
+      select: { id: true, rut: true, email: true, role: true } 
+    });
+
+    if (!usuarioAEliminar) {
+      return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    }
+
+    // 🛡️ Regla de jerarquía
+    if (requesterRole === "SUPERVISOR" && usuarioAEliminar.role.toUpperCase() !== "DOCENTE") {
+      return NextResponse.json({ error: "No puedes eliminar este nivel" }, { status: 403 });
+    }
+
+    // 2. Ejecutamos la actualización renombrando los campos UNIQUE
+    // Ejemplo: "1234567-8" -> "1234567-8-E-1736106000000"
+    const timestamp = Date.now();
     await prisma.user.update({
       where: { id },
       data: {
         estado: "INACTIVO",
         deletedAt: new Date(),
-        deletedById: requesterId
+        deletedById: requesterId,
+        rut: `${usuarioAEliminar.rut}-E-${timestamp}`,
+        email: `${usuarioAEliminar.email}-E-${timestamp}`
       }
     });
 
-    return NextResponse.json({ message: "Usuario marcado como inactivo" });
+    return NextResponse.json({ message: "Usuario dado de baja y datos liberados" });
   } catch (error) {
+    console.error("❌ Error DELETE:", error);
     return NextResponse.json({ error: "Error al eliminar" }, { status: 500 });
   }
 }

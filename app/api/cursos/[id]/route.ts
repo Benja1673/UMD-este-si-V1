@@ -1,3 +1,4 @@
+// app/api/cursos/[id]/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
@@ -15,12 +16,15 @@ export async function GET(
     if (id) {
       // 🔹 Obtener un curso específico (que no esté eliminado)
       const curso = await prisma.curso.findFirst({
-        where: { id, deletedAt: null }, // 🛡️ Filtro Soft Delete
+        where: { id, deletedAt: null }, // 🛡️ Filtro Soft Delete del curso
         include: {
           departamento: true,
           categoria: true,
           inscripciones: {
-            where: { deletedAt: null }, // 🛡️ Opcional: filtrar inscripciones eliminadas
+            where: { 
+              deletedAt: null, // 🛡️ Filtro Soft Delete de la inscripción
+              estado: { not: "NO_INSCRITO" } // ✅ Estándar: Los desinscritos no aparecen en la lista activa
+            },
             include: {
               usuario: {
                 select: {
@@ -44,13 +48,23 @@ export async function GET(
 
       return NextResponse.json(curso);
     } else {
-      // 🔹 Obtener todos los cursos activos
+      // 🔹 Obtener todos los cursos activos para la lista general
       const cursos = await prisma.curso.findMany({
-        where: { deletedAt: null }, // 🛡️ Filtro Soft Delete
+        where: { deletedAt: null }, // 🛡️ Filtro Soft Delete del curso
         include: {
           departamento: true,
           categoria: true,
-          _count: { select: { inscripciones: true } },
+          _count: { 
+            select: { 
+              inscripciones: { 
+                // ✅ Solo contamos cupos para estados reales (INSCRITO, APROBADO, REPROBADO)
+                where: { 
+                  estado: { in: ["INSCRITO", "APROBADO", "REPROBADO"] },
+                  deletedAt: null
+                } 
+              } 
+            } 
+          },
         },
       });
 
@@ -133,7 +147,7 @@ export async function POST(req: Request) {
   }
 }
 
-// ✅ PUT - Actualizar curso con Auditoría y Control de Activo/Inactivo
+// ✅ PUT - Actualizar curso con Auditoría, Sincronización de Estados y Timeout ampliado
 export async function PUT(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -157,38 +171,55 @@ export async function PUT(
       nivel,
       tipo,
       ano,
-      activo, // 👈 Nuevo campo para activar/desactivar
+      activo, 
       categoriaId,
       departamentoId,
       docentesInscritos = [],
     } = body;
 
-    // Verificar que el curso no esté eliminado
+    // 🚀 Optimización: Verificaciones iniciales fuera de la transacción para ahorrar tiempo
     const cursoBase = await prisma.curso.findFirst({ where: { id: cursoId, deletedAt: null } });
     if (!cursoBase) return NextResponse.json({ error: "Curso no encontrado" }, { status: 404 });
 
     const inscripcionesActuales = await prisma.inscripcionCurso.findMany({ where: { cursoId } });
 
     const nuevosUserIds = docentesInscritos.map((d: any) => d.userId);
-    const inscripcionesAEliminar = inscripcionesActuales.filter((i) => !nuevosUserIds.includes(i.userId));
-    const inscripcionesAActualizar = docentesInscritos.filter((d: any) => inscripcionesActuales.some((i) => i.userId === d.userId));
-    const inscripcionesNuevas = docentesInscritos.filter((d: any) => !inscripcionesActuales.some((i) => i.userId === d.userId));
+    
+    const inscripcionesADesactivar = inscripcionesActuales.filter(
+      (i) => !nuevosUserIds.includes(i.userId) && i.estado !== "NO_INSCRITO"
+    );
+    
+    const inscripcionesAActualizar = docentesInscritos.filter((d: any) => 
+      inscripcionesActuales.some((i) => i.userId === d.userId)
+    );
 
+    const inscripcionesNuevas = docentesInscritos.filter((d: any) => 
+      !inscripcionesActuales.some((i) => i.userId === d.userId)
+    );
+
+    // 🛡️ Aumentamos el timeout a 20 segundos (20000ms) para evitar cierres prematuros por carga masiva
     const cursoActualizado = await prisma.$transaction(async (tx) => {
-      // 1️⃣ Eliminar físicamente inscripciones quitadas (o podrías hacer soft delete aquí también)
-      for (const ins of inscripcionesAEliminar) {
-        await tx.inscripcionCurso.delete({ where: { id: ins.id } });
+      // 1️⃣ ✅ ESTÁNDAR: Los docentes removidos pasan a NO_INSCRITO
+      for (const ins of inscripcionesADesactivar) {
+        await tx.inscripcionCurso.update({
+          where: { id: ins.id },
+          data: { 
+            estado: "NO_INSCRITO", 
+            updatedById: requesterId 
+          },
+        });
       }
 
-      // 2️⃣ Actualizar inscripciones existentes
+      // 2️⃣ Actualizar existentes o reactivar previos NO_INSCRITO
       for (const insData of inscripcionesAActualizar) {
-        const inscripcionExistente = inscripcionesActuales.find((i) => i.userId === insData.userId);
-        if (inscripcionExistente) {
+        const existente = inscripcionesActuales.find((i) => i.userId === insData.userId);
+        if (existente) {
           await tx.inscripcionCurso.update({
-            where: { id: inscripcionExistente.id },
+            where: { id: existente.id },
             data: {
               estado: insData.estado || "INSCRITO",
-              nota: insData.nota !== undefined ? Number(insData.nota) : null,
+              // Sanitizamos la nota para evitar errores de tipo
+              nota: insData.nota !== undefined ? (insData.nota === "" ? null : Number(insData.nota)) : null,
               fechaAprobacion: insData.estado === "APROBADO" ? new Date() : null,
               updatedById: requesterId,
             },
@@ -196,14 +227,13 @@ export async function PUT(
         }
       }
 
-      // 3️⃣ Crear nuevas inscripciones
+      // 3️⃣ Crear registros para docentes nuevos en este curso
       for (const insData of inscripcionesNuevas) {
         await tx.inscripcionCurso.create({
           data: {
             cursoId,
             userId: insData.userId,
             estado: insData.estado || "INSCRITO",
-            nota: insData.nota !== undefined ? Number(insData.nota) : null,
             fechaInscripcion: new Date(),
             createdById: requesterId,
             updatedById: requesterId,
@@ -211,7 +241,7 @@ export async function PUT(
         });
       }
 
-      // 4️⃣ Actualizar curso con Auditoría
+      // 4️⃣ Actualizar los datos generales del curso
       return tx.curso.update({
         where: { id: cursoId },
         data: {
@@ -220,28 +250,36 @@ export async function PUT(
           codigo,
           nivel,
           tipo,
-          activo: activo !== undefined ? activo : undefined, // 📝 Actualización de estado Activo/Inactivo
+          activo: activo !== undefined ? activo : undefined,
           ano: Number(ano),
           categoriaId,
           departamentoId,
-          updatedById: requesterId, // 📝 Auditoría
+          updatedById: requesterId,
         },
         include: {
           departamento: true,
           categoria: true,
-          inscripciones: { include: { usuario: true } },
+          inscripciones: { 
+            where: { estado: { not: "NO_INSCRITO" } }, // Ocultamos historial simbólico en el retorno
+            include: { usuario: true } 
+          },
         },
       });
+    }, {
+      timeout: 20000 // ✅ Solución definitiva al error de Interactive Transaction timeout
     });
 
     return NextResponse.json(cursoActualizado);
   } catch (error) {
     console.error("❌ Error al actualizar curso:", error);
-    return NextResponse.json({ error: "Error al actualizar" }, { status: 500 });
+    return NextResponse.json({ 
+      error: "Error al actualizar", 
+      details: error instanceof Error ? error.message : "Error desconocido" 
+    }, { status: 500 });
   }
 }
 
-// ✅ DELETE - Borrado Lógico (Soft Delete)
+// ✅ DELETE - Soft Delete (Borrado Lógico) del curso
 export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -257,20 +295,19 @@ export async function DELETE(
     const resolvedParams = await params;
     const cursoId = resolvedParams.id;
 
-    // 🗑️ Soft Delete: Solo marcamos fecha y autor del borrado
+    // 🗑️ Soft Delete: Registramos fecha y autor del borrado
     await prisma.curso.update({
       where: { id: cursoId },
       data: {
         deletedAt: new Date(),
         deletedById: requesterId,
-        activo: false, // Opcional: Desactivarlo también al "eliminar"
+        activo: false, 
       },
     });
 
-    console.log(`🗑️ Curso marcado como eliminado por ${requesterId}: ${cursoId}`);
     return NextResponse.json({ message: "Curso eliminado correctamente (Soft Delete)" });
   } catch (error) {
     console.error("❌ Error al eliminar curso:", error);
     return NextResponse.json({ error: "No se pudo eliminar el curso" }, { status: 500 });
   }
-} 
+}

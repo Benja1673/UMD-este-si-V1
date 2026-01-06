@@ -17,10 +17,10 @@ export async function PATCH(
       return NextResponse.json({ error: "Estado requerido" }, { status: 400 })
     }
 
-    // Validar que sea un estado válido
-    if (!["INSCRITO", "APROBADO", "REPROBADO"].includes(estado)) {
-      return NextResponse.json({ error: "Estado inválido" }, { status: 400 })
-    }
+// Cambiar la validación para incluir NO_INSCRITO
+if (!["INSCRITO", "APROBADO", "REPROBADO", "NO_INSCRITO"].includes(estado)) {
+  return NextResponse.json({ error: "Estado inválido" }, { status: 400 });
+}
 
     const inscripcionActualizada = await prisma.inscripcionCurso.update({
       where: { id: id },
