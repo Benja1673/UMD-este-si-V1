@@ -82,6 +82,8 @@ export default async function ProfilePage() {
     telefono: userDb.telefono ?? undefined,
     direccion: userDb.direccion ?? undefined,
     carrera: userDb.departamento?.nombre ?? "Sin Departamento",
+    // ✅ SOLUCIÓN: Pasamos el nivel almacenado en la base de datos al componente visual
+    nivelActual: userDb.nivelActual ?? "SIN_NIVEL",
   }
 
   // 4️⃣ Mapear las inscripciones activas a la estructura de la interfaz
@@ -90,7 +92,7 @@ export default async function ProfilePage() {
     nombre: i.curso.nombre ?? "Curso sin nombre",
     descripcion: i.curso.descripcion ?? "",
     categoria: (i.curso.categoria as any)?.nombre ?? "Sin categoría",
-    // Estandarizamos el nivel para el componente visual
+    // Estandarizamos el nivel para el componente visual (capitalización)
     nivel: capitalizar(i.curso.nivel) as "Inicial" | "Intermedio" | "Avanzado",
     // Traducimos el estado de la BD al componente
     estado: mapEstado(i.estado),

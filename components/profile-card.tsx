@@ -2,17 +2,9 @@
 
 import { useState } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge" // Asegúrate de tener este componente o usa un span con clases de tailwind
+import { GraduationCap, User as UserIcon, Mail, Phone, MapPin, Award } from "lucide-react"
 
 // Tipos
 export type Curso = {
@@ -33,6 +25,7 @@ export type UserProfile = {
   email: string
   telefono?: string
   direccion?: string
+  nivelActual?: string // ✅ Nuevo campo añadido
 }
 
 interface ProfileCardProps {
@@ -41,51 +34,25 @@ interface ProfileCardProps {
 }
 
 export default function ProfileCard({ user, cursos }: ProfileCardProps) {
-  const [cursosState, setCursosState] = useState<Curso[]>(cursos)
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [cursoActual, setCursoActual] = useState<Curso | null>(null)
-  const [estadoSeleccionado, setEstadoSeleccionado] = useState<Curso["estado"]>("Inscrito")
+  const [cursosState] = useState<Curso[]>(cursos)
 
-  // 🎨 Colores según estado
-  const getColor = (estado: string) => {
+  // 🎨 Colores según estado del curso
+  const getEstadoColor = (estado: string) => {
     switch (estado?.toUpperCase()) {
-      case "APROBADO":
-        return "bg-green-100 text-green-800"
-      case "REPROBADO":
-        return "bg-red-100 text-red-800"
-      case "INSCRITO":
-        return "bg-yellow-100 text-yellow-800"
-      default:
-        return "bg-gray-100 text-gray-800"
+      case "APROBADO": return "bg-green-100 text-green-800 border-green-200"
+      case "REPROBADO": return "bg-red-100 text-red-800 border-red-200"
+      case "INSCRITO": return "bg-yellow-100 text-yellow-800 border-yellow-200"
+      default: return "bg-gray-100 text-gray-800 border-gray-200"
     }
   }
 
-  // Renderizar chip de estado
-  const renderEstadoCurso = (curso?: Curso) => {
-    if (!curso)
-      return <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">No disponible</span>
-
-    return (
-      <span className={`px-2 py-1 rounded text-xs font-medium ${getColor(curso.estado)}`}>
-        {curso.estado}
-      </span>
-    )
-  }
-
-  // Abrir modal
-  const handleEditarEstado = (curso: Curso) => {
-    setCursoActual(curso)
-    setEstadoSeleccionado(curso.estado)
-    setIsDialogOpen(true)
-  }
-
-  // Guardar nuevo estado
-  const handleGuardarEstado = () => {
-    if (cursoActual) {
-      setCursosState(
-        cursosState.map((c) => (c.id === cursoActual.id ? { ...c, estado: estadoSeleccionado } : c))
-      )
-      setIsDialogOpen(false)
+  // 🏆 Colores según Nivel del Docente
+  const getNivelColor = (nivel: string | undefined) => {
+    switch (nivel?.toUpperCase()) {
+      case "AVANZADO": return "bg-green-600 text-white shadow-sm"
+      case "INTERMEDIO": return "bg-blue-600 text-white shadow-sm"
+      case "INICIAL": return "bg-orange-500 text-white shadow-sm"
+      default: return "bg-gray-400 text-white"
     }
   }
 
@@ -93,59 +60,89 @@ export default function ProfileCard({ user, cursos }: ProfileCardProps) {
     <div className="space-y-6">
       {/* Header Perfil */}
       <div className="flex flex-col md:flex-row gap-6">
-        {/* Izquierda */}
+        
+        {/* Lado Izquierdo: Resumen Visual */}
         <div className="w-full md:w-1/3">
-          <div className="bg-gray-100 rounded-lg p-6 flex flex-col items-center">
-            <div className="h-32 w-32 rounded-full bg-gray-300 mb-4 overflow-hidden">
+          <div className="bg-white border rounded-xl p-6 flex flex-col items-center shadow-sm">
+            <div className="h-32 w-32 rounded-full bg-blue-50 mb-4 overflow-hidden border-4 border-white shadow-md">
               <img
                 src="/placeholder.svg?height=128&width=128"
                 alt="Foto de perfil"
                 className="h-full w-full object-cover"
               />
             </div>
-            <h2 className="text-lg font-medium text-center">
+            <h2 className="text-xl font-bold text-gray-800 text-center uppercase">
               {user.name} {user.apellido}
             </h2>
-            <p className="text-gray-500 text-sm">{user.rut}</p>
-            <p className="text-blue-600 font-medium mt-2">{user.carrera}</p>
+            <p className="text-gray-500 text-sm font-mono mb-2">{user.rut}</p>
+            
+            <div className="flex flex-col items-center gap-2 mt-2 w-full">
+              <span className="text-blue-700 bg-blue-50 px-3 py-1 rounded-full text-xs font-semibold text-center">
+                {user.carrera}
+              </span>
+              
+              {/* ✅ MOSTRAR NIVEL ACTUAL AQUÍ */}
+              <div className={`mt-2 px-4 py-1.5 rounded-lg text-sm font-bold uppercase flex items-center gap-2 ${getNivelColor(user.nivelActual)}`}>
+                <Award className="h-4 w-4" />
+                {user.nivelActual || "SIN NIVEL"}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Derecha */}
+        {/* Lado Derecho: Detalles Informativos */}
         <div className="w-full md:w-2/3">
-          <div className="bg-gray-100 rounded-lg p-6">
-            <h3 className="text-lg font-medium mb-4">Información Personal</h3>
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-500">Nombre completo</label>
-                  <p>{user.name} {user.apellido}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-500">RUT</label>
-                  <p>{user.rut}</p>
-                </div>
+          <div className="bg-white border rounded-xl p-8 shadow-sm h-full">
+            <div className="flex items-center gap-2 mb-6 border-b pb-4">
+              <UserIcon className="text-gray-400 h-5 w-5" />
+              <h3 className="text-lg font-bold text-gray-800 uppercase italic">Información Personal</h3>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-y-6 gap-x-12">
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Nombre completo</label>
+                <p className="text-gray-700 font-medium">{user.name} {user.apellido}</p>
+              </div>
+              
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Identificación (RUT)</label>
+                <p className="text-gray-700 font-medium font-mono">{user.rut}</p>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Carrera</label>
-                <p>{user.carrera}</p>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Departamento / Carrera</label>
+                <p className="text-gray-700 font-medium italic">{user.carrera}</p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-500">Email</label>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Estado de Progresión</label>
+                <p className={`font-bold italic ${user.nivelActual ? 'text-blue-600' : 'text-gray-400'}`}>
+                  Nivel {user.nivelActual || "Sin Nivel Registrado"}
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Correo Electrónico</label>
+                <div className="flex items-center gap-2 text-gray-700">
+                  <Mail className="h-3 w-3 text-gray-400" />
                   <p>{user.email}</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-500">Teléfono</label>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Teléfono de Contacto</label>
+                <div className="flex items-center gap-2 text-gray-700">
+                  <Phone className="h-3 w-3 text-gray-400" />
                   <p>{user.telefono || "No registrado"}</p>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Dirección</label>
-                <p>{user.direccion || "No registrada"}</p>
+              <div className="col-span-1 md:col-span-2 space-y-1 border-t pt-4">
+                <label className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Dirección de Domicilio</label>
+                <div className="flex items-center gap-2 text-gray-700">
+                  <MapPin className="h-3 w-3 text-gray-400" />
+                  <p>{user.direccion || "No registrada en el sistema"}</p>
+                </div>
               </div>
             </div>
           </div>
@@ -153,91 +150,57 @@ export default function ProfileCard({ user, cursos }: ProfileCardProps) {
       </div>
 
       {/* Tabla de inscripciones */}
-      <div className="bg-white rounded-lg shadow p-6 mt-6">
-        <h2 className="text-xl font-bold mb-4 text-gray-800">Inscripciones del Docente</h2>
+      <div className="bg-white border rounded-xl shadow-sm overflow-hidden mt-8">
+        <div className="bg-gray-50 border-b px-6 py-4 flex items-center gap-2">
+          <GraduationCap className="h-5 w-5 text-gray-500" />
+          <h2 className="text-lg font-bold text-gray-800 uppercase italic">Historial Académico</h2>
+        </div>
 
         <Table>
-          <TableHeader>
+          <TableHeader className="bg-gray-50">
             <TableRow>
-              <TableHead>Curso</TableHead>
-              <TableHead>Descripción</TableHead>
-              <TableHead>Categoría</TableHead>
-              <TableHead>Nivel</TableHead>
-              <TableHead>Estado</TableHead>
-              {/* Elimina esta línea */}
-              {/* <TableHead>Acciones</TableHead> */}
+              <TableHead className="font-bold text-gray-600">CURSO</TableHead>
+              <TableHead className="font-bold text-gray-600">CATEGORÍA</TableHead>
+              <TableHead className="font-bold text-gray-600">NIVEL</TableHead>
+              <TableHead className="font-bold text-gray-600 text-center">ESTADO</TableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
-            {cursosState.map((curso) => (
-              <TableRow key={curso.id}>
-                <TableCell>{curso.nombre}</TableCell>
-                <TableCell>{curso.descripcion}</TableCell>
-                <TableCell>{curso.categoria}</TableCell>
-                <TableCell>{curso.nivel}</TableCell>
-
-                <TableCell>
-                  <span
-                    className={`px-3 py-1 rounded-full text-sm font-medium ${getColor(
-                      curso.estado
-                    )}`}
-                  >
-                    {curso.estado}
-                  </span>
+            {cursosState.length > 0 ? (
+              cursosState.map((curso) => (
+                <TableRow key={curso.id} className="hover:bg-gray-50/50 transition-colors">
+                  <TableCell className="font-medium">
+                    <div>
+                      <p className="text-gray-900">{curso.nombre}</p>
+                      <p className="text-xs text-gray-500 mt-1 italic">{curso.descripcion}</p>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-600 font-medium">
+                      {curso.categoria}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-xs font-semibold text-gray-500 uppercase tracking-tighter">
+                    {curso.nivel}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wider ${getEstadoColor(curso.estado)}`}>
+                      {curso.estado}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center py-12 text-gray-400 italic">
+                  No se registran inscripciones vigentes para este docente.
                 </TableCell>
-
-                {/* Elimina este TableCell completo */}
-                {/* <TableCell>
-                  <Button size="sm" variant="outline" onClick={() => handleEditarEstado(curso)}>
-                    <Edit className="w-4 h-4 mr-1" /> Editar
-                  </Button>
-                </TableCell> */}
               </TableRow>
-            ))}
+            )}
           </TableBody>
         </Table>
       </div>
-
-      {/* Modal para editar estado */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Editar Estado de Inscripción</DialogTitle>
-            <DialogDescription>
-              Actualiza el estado del curso <b>{cursoActual?.nombre}</b>.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4 py-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="estado">Estado</Label>
-              <Select
-                value={estadoSeleccionado}
-                onValueChange={(value) =>
-                  setEstadoSeleccionado(value as Curso["estado"])
-                }
-              >
-                <SelectTrigger className={`w-40 ${getColor(estadoSeleccionado)} text-center`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Aprobado">Aprobado</SelectItem>
-                  <SelectItem value="Reprobado">Reprobado</SelectItem>
-                  <SelectItem value="Inscrito">Inscrito</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleGuardarEstado}>Guardar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

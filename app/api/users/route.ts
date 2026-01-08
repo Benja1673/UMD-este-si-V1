@@ -30,7 +30,7 @@ async function sendTemporaryPasswordEmail(toEmail: string, temporaryPassword: st
   try { await transporter.sendMail(mailOptions); } catch (error) { console.error("❌ Error envío correo:", error); }
 }
 
-// ✅ GET - Obtener usuarios con Auditoría, Jerarquía y Filtros
+// ✅ GET - Obtener usuarios con Auditoría, Jerarquía, Filtros y NIVEL ACTUAL
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -48,10 +48,9 @@ export async function GET(request: Request) {
     
     const baseWhere: any = { 
       role: { in: rolesVisibles },
-      deletedAt: null // Solo registros no borrados físicamente
+      deletedAt: null 
     };
 
-    // Filtro de Estado Administrativo
     if (estadoParam === "activos") baseWhere.estado = "ACTIVO";
     else if (estadoParam === "inactivos") baseWhere.estado = "INACTIVO";
 
@@ -67,9 +66,20 @@ export async function GET(request: Request) {
     const usuarios = await prisma.user.findMany({
       where: baseWhere,
       select: {
-        id: true, name: true, apellido: true, rut: true, email: true,
-        telefono: true, especialidad: true, estado: true, role: true,
-        direccion: true, fechaNacimiento: true, departamentoId: true,
+        id: true,
+        name: true,
+        apellido: true,
+        rut: true,
+        email: true,
+        telefono: true,
+        especialidad: true,
+        estado: true,
+        role: true,
+        direccion: true,
+        fechaNacimiento: true,
+        departamentoId: true,
+        // ✅ MEJORA: Incluimos el nivel para que se vea en Gestión Docente y Dashboard
+        nivelActual: true, 
         departamento: { select: { id: true, nombre: true, codigo: true } },
         inscripciones: {
           where: { deletedAt: null },
@@ -85,7 +95,7 @@ export async function GET(request: Request) {
   }
 }
 
-// ✅ POST - Crear usuario con Conflicto (409) y Sanitización
+// ✅ POST - Crear usuario
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -98,8 +108,6 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { nombre, apellido, rut, email, telefono, departamentoId, role, direccion, fechaNacimiento, especialidad } = body;
 
-    // 🛡️ Validación de Duplicados (Conflict 409)
-    // Gracias al renombrado en el DELETE, aquí no chocará con usuarios eliminados
     const existente = await prisma.user.findFirst({
       where: { OR: [{ rut }, { email }] }
     });
@@ -122,6 +130,7 @@ export async function POST(request: Request) {
         direccion: direccion || null,
         fechaNacimiento: fechaNacimiento ? new Date(fechaNacimiento) : null,
         departamentoId: (departamentoId === "none" || departamentoId === "") ? null : departamentoId,
+        nivelActual: "SIN_NIVEL", // Nivel por defecto al crear
         createdById: requesterId,
         updatedById: requesterId,
       },
@@ -136,7 +145,7 @@ export async function POST(request: Request) {
   }
 }
 
-// ✅ PUT - Actualizar con Sanitización Total y Soporte de ID URL/Body
+// ✅ PUT - Actualizar usuario
 export async function PUT(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -154,12 +163,10 @@ export async function PUT(request: Request) {
     const existente = await prisma.user.findUnique({ where: { id: userId } });
     if (!existente) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-    // 🛡️ Jerarquía de edición
     if (requesterRole === "SUPERVISOR" && existente.role.toUpperCase() !== "DOCENTE") {
       return NextResponse.json({ error: "No puedes editar este nivel" }, { status: 403 });
     }
 
-    // Verificar duplicados en otros usuarios activos
     const { rut, email, resetPassword } = body;
     const duplicado = await prisma.user.findFirst({
       where: {
@@ -167,7 +174,7 @@ export async function PUT(request: Request) {
         OR: [{ rut }, { email }]
       }
     });
-    if (duplicado) return NextResponse.json({ error: "RUT o Email ya en uso por otro usuario" }, { status: 409 });
+    if (duplicado) return NextResponse.json({ error: "RUT o Email ya en uso" }, { status: 409 });
 
     let passwordData: any = {};
     if (resetPassword || (email && email !== existente.email)) {
@@ -203,7 +210,7 @@ export async function PUT(request: Request) {
   }
 }
 
-// ✅ DELETE - Soft Delete con liberación de RUT y Email mediante Timestamp
+// ✅ DELETE - Soft Delete
 export async function DELETE(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -218,23 +225,17 @@ export async function DELETE(request: Request) {
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "ID requerido" }, { status: 400 });
 
-    // 1. Buscamos al usuario primero para obtener su RUT y Email actual
     const usuarioAEliminar = await prisma.user.findUnique({ 
       where: { id },
       select: { id: true, rut: true, email: true, role: true } 
     });
 
-    if (!usuarioAEliminar) {
-      return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-    }
+    if (!usuarioAEliminar) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-    // 🛡️ Regla de jerarquía
     if (requesterRole === "SUPERVISOR" && usuarioAEliminar.role.toUpperCase() !== "DOCENTE") {
       return NextResponse.json({ error: "No puedes eliminar este nivel" }, { status: 403 });
     }
 
-    // 2. Ejecutamos la actualización renombrando los campos UNIQUE
-    // Ejemplo: "1234567-8" -> "1234567-8-E-1736106000000"
     const timestamp = Date.now();
     await prisma.user.update({
       where: { id },
@@ -247,7 +248,7 @@ export async function DELETE(request: Request) {
       }
     });
 
-    return NextResponse.json({ message: "Usuario dado de baja y datos liberados" });
+    return NextResponse.json({ message: "Usuario dado de baja" });
   } catch (error) {
     console.error("❌ Error DELETE:", error);
     return NextResponse.json({ error: "Error al eliminar" }, { status: 500 });

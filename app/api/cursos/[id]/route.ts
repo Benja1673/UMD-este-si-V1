@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions, isAdminOrSupervisor } from "@/lib/auth";
+// ✅ IMPORTACIÓN DE TU LÓGICA CORREGIDA
+import { actualizarNivelDocente } from "@/lib/nivel-logic";
 
 // ✅ GET - Obtener curso específico o todos los cursos (solo no eliminados)
 export async function GET(
@@ -140,6 +142,11 @@ export async function POST(req: Request) {
       },
     });
 
+    // ✅ SINCRONIZACIÓN DE NIVELES (Para nuevos inscritos)
+    for (const d of docentesInscritos) {
+      await actualizarNivelDocente(d.userId).catch(e => console.error("Error nivel:", e));
+    }
+
     return NextResponse.json(nuevoCurso, { status: 201 });
   } catch (error) {
     console.error("Error creando curso:", error);
@@ -268,6 +275,17 @@ export async function PUT(
     }, {
       timeout: 20000 // ✅ Solución definitiva al error de Interactive Transaction timeout
     });
+
+    // ✅ MEJORA: RECALCULAR NIVELES EN LA BD PARA TODOS LOS USUARIOS AFECTADOS
+    // Juntamos IDs de desactivados y actuales para asegurar que todos queden al día
+    const idsParaSincronizar = Array.from(new Set([
+      ...inscripcionesADesactivar.map(i => i.userId),
+      ...nuevosUserIds
+    ]));
+
+    for (const uId of idsParaSincronizar) {
+      await actualizarNivelDocente(uId).catch(err => console.error("Error sync nivel:", err));
+    }
 
     return NextResponse.json(cursoActualizado);
   } catch (error) {
