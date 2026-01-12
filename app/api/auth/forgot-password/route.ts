@@ -1,3 +1,4 @@
+// app/api/auth/forgot-password/route.ts
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import nodemailer from "nodemailer"
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
     const user = await prisma.user.findUnique({ where: { email } })
     //const docente = await prisma.docente.findUnique({ where: { email } })
 
-    if (!user  ) {
+    if (!user) {
       return NextResponse.json({ message: "El correo no está registrado" }, { status: 404 })
     }
 
@@ -42,9 +43,10 @@ export async function POST(req: Request) {
       },
     })
 
-    // 5️⃣ Construir link hacia reset-password
-    // Cambia 'https://miweb.com/reset-password' por la URL real de tu frontend
-    const resetLink = `http://localhost:3000/reset-password?email=${encodeURIComponent(email)}&code=${encodeURIComponent(code)}`
+    // 5️⃣ Construir link hacia reset-password de forma dinámica
+    // ✅ MEJORA: Si estamos en Vercel usa NEXTAUTH_URL, si no, usa localhost
+    const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
+    const resetLink = `${baseUrl}/reset-password?email=${encodeURIComponent(email)}&code=${encodeURIComponent(code)}`
 
     // 6️⃣ Opciones de correo
     const mailOptions = {
@@ -53,10 +55,22 @@ export async function POST(req: Request) {
       subject: "Recuperación de contraseña",
       text: `Tu código de recuperación es: ${code}\n\nHaz clic en este enlace para restablecer tu contraseña:\n${resetLink}`,
       html: `
-        <p>Tu código de recuperación es: <b>${code}</b></p>
-        <p>Haz clic en el siguiente enlace para restablecer tu contraseña:</p>
-        <a href="${resetLink}" target="_blank">Restablecer contraseña</a>
-        <p>El código expira en 15 minutos.</p>
+        <div style="font-family: sans-serif; padding: 20px; color: #333;">
+          <h2 style="color: #2563eb;">Recuperación de Contraseña</h2>
+          <p>Has solicitado restablecer tu contraseña para la plataforma UMD.</p>
+          <p>Tu código de recuperación es: <b style="font-size: 1.2em; color: #2563eb;">${code}</b></p>
+          <p>Haz clic en el siguiente botón para continuar con el proceso:</p>
+          <div style="margin: 30px 0;">
+            <a href="${resetLink}" 
+               target="_blank" 
+               style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+               Restablecer mi contraseña
+            </a>
+          </div>
+          <p style="font-size: 0.9em; color: #666;">Este enlace y código expirarán en 15 minutos.</p>
+          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+          <p style="font-size: 0.8em; color: #999;">Si no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>
+        </div>
       `,
     }
 
