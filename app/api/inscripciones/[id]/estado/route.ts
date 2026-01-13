@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 
+// ✅ Aumento de timeout de ejecución para entornos Serverless (Vercel)
+export const maxDuration = 60; 
+
 export async function PATCH(
   req: Request,
   props: { params: Promise<{ id: string }> }
@@ -17,14 +20,19 @@ export async function PATCH(
       return NextResponse.json({ error: "Estado requerido" }, { status: 400 })
     }
 
-// Cambiar la validación para incluir NO_INSCRITO
-if (!["INSCRITO", "APROBADO", "REPROBADO", "NO_INSCRITO"].includes(estado)) {
-  return NextResponse.json({ error: "Estado inválido" }, { status: 400 });
-}
+    // Cambiar la validación para incluir NO_INSCRITO
+    if (!["INSCRITO", "APROBADO", "REPROBADO", "NO_INSCRITO"].includes(estado)) {
+      return NextResponse.json({ error: "Estado inválido" }, { status: 400 });
+    }
 
-    const inscripcionActualizada = await prisma.inscripcionCurso.update({
-      where: { id: id },
-      data: { estado: estado },
+    // ✅ Uso de transacción con timeout aumentado (20 segundos) para evitar cierres prematuros
+    const inscripcionActualizada = await prisma.$transaction(async (tx) => {
+      return await tx.inscripcionCurso.update({
+        where: { id: id },
+        data: { estado: estado },
+      })
+    }, {
+      timeout: 20000 // Solución al error de Interactive Transaction timeout
     })
 
     return NextResponse.json(inscripcionActualizada)

@@ -3,6 +3,10 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import nodemailer from "nodemailer"
 
+// ✅ Aumento de timeout de ejecución para entornos Serverless (Vercel)
+// Esto es crucial para dar tiempo suficiente al envío del correo vía SMTP.
+export const maxDuration = 60; 
+
 console.log("EMAIL_USER:", process.env.EMAIL_USER);
 console.log("EMAIL_PASS:", process.env.EMAIL_PASS ? "****" : "NO DEFINIDA");
 
@@ -14,25 +18,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: "Correo requerido" }, { status: 400 })
     }
 
-    // 1️⃣ Buscar usuario o docente
-    const user = await prisma.user.findUnique({ where: { email } })
-    //const docente = await prisma.docente.findUnique({ where: { email } })
+    // ✅ Uso de transacción con timeout aumentado (20 segundos) para las operaciones de BD
+    const resetData = await prisma.$transaction(async (tx) => {
+      // 1️⃣ Buscar usuario o docente
+      const user = await tx.user.findUnique({ where: { email } })
 
-    if (!user) {
-      return NextResponse.json({ message: "El correo no está registrado" }, { status: 404 })
-    }
+      if (!user) {
+        throw new Error("USER_NOT_FOUND");
+      }
 
-    // 2️⃣ Generar código de 6 dígitos
-    const code = Math.floor(100000 + Math.random() * 900000).toString()
+      // 2️⃣ Generar código de 6 dígitos
+      const code = Math.floor(100000 + Math.random() * 900000).toString()
 
-    // 3️⃣ Guardar en PasswordReset
-    await prisma.passwordReset.create({
-      data: {
-        email,
-        code,
-        expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutos
-      },
-    })
+      // 3️⃣ Guardar en PasswordReset
+      await tx.passwordReset.create({
+        data: {
+          email,
+          code,
+          expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutos
+        },
+      })
+
+      return { code };
+    }, {
+      timeout: 20000 // Solución al error de Interactive Transaction timeout
+    });
+
+    const { code } = resetData;
 
     // 4️⃣ Configurar Nodemailer
     const transporter = nodemailer.createTransport({
@@ -44,7 +56,6 @@ export async function POST(req: Request) {
     })
 
     // 5️⃣ Construir link hacia reset-password de forma dinámica
-    // ✅ MEJORA: Si estamos en Vercel usa NEXTAUTH_URL, si no, usa localhost
     const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
     const resetLink = `${baseUrl}/reset-password?email=${encodeURIComponent(email)}&code=${encodeURIComponent(code)}`
 
@@ -80,6 +91,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ message: "Se envió el código al correo" })
   } catch (error: any) {
+    if (error.message === "USER_NOT_FOUND") {
+      return NextResponse.json({ message: "El correo no está registrado" }, { status: 404 })
+    }
     console.error("Error en forgot-password:", error)
     return NextResponse.json({ message: error.message || "Error interno" }, { status: 500 })
   }

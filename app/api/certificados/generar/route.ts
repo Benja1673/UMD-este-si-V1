@@ -3,6 +3,10 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+// ✅ Aumento de timeout de ejecución para entornos Serverless (Vercel)
+// Esto permite que el proceso de Puppeteer tenga hasta 60 segundos para completar la tarea.
+export const maxDuration = 60; 
+
 // NO importamos puppeteer arriba.
 
 export async function POST(req: Request) {

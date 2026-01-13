@@ -38,3 +38,5 @@ next-env.d.ts
 # local env files
 .env
 .env*.local
+# Snyk Security Extension - AI Rules (auto-generated)
+.github/instructions/snyk_rules.instructions.md

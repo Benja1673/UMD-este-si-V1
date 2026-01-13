@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+// ✅ Aumento de timeout de ejecución para entornos Serverless (Vercel)
+export const maxDuration = 60; 
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -16,27 +19,32 @@ export async function GET(req: Request) {
     if (usuarioId) where.userId = usuarioId;
     if (cursoId) where.cursoId = cursoId;
 
-    const inscripciones = await prisma.inscripcionCurso.findMany({
-      where,
-      include: {
-        usuario: {
-          select: {
-            id: true,
-            name: true,
-            apellido: true,
-            email: true,
-            departamento: { select: { nombre: true } },
+    // ✅ Uso de transacción con timeout aumentado (20 segundos) para evitar errores de carga lenta
+    const inscripciones = await prisma.$transaction(async (tx) => {
+      return await tx.inscripcionCurso.findMany({
+        where,
+        include: {
+          usuario: {
+            select: {
+              id: true,
+              name: true,
+              apellido: true,
+              email: true,
+              departamento: { select: { nombre: true } },
+            },
+          },
+          curso: {
+            select: {
+              id: true,
+              nombre: true,
+              codigo: true,
+            },
           },
         },
-        curso: {
-          select: {
-            id: true,
-            nombre: true,
-            codigo: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
+        orderBy: { createdAt: "desc" },
+      });
+    }, {
+      timeout: 20000 // Solución al error de Interactive Transaction timeout
     });
 
     return NextResponse.json(inscripciones);

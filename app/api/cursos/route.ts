@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions, isAdminOrSupervisor } from "@/lib/auth";
 
+// ✅ Aumento de timeout de ejecución para entornos Serverless (Vercel)
+export const maxDuration = 60; 
+
 // ✅ GET - Obtener todos los cursos (Filtrado por auditoría y estado)
 export async function GET(req: Request) {
   try {
@@ -43,37 +46,32 @@ export async function GET(req: Request) {
       return NextResponse.json(curso);
     } else {
       // 🔹 Caso 2: Obtener lista de cursos
-      // 🛡️ Siempre filtramos para no traer lo que fue borrado lógicamente (deletedAt)
       let whereClause: any = { deletedAt: null };
 
-      // 💡 Lógica de filtrado por estado activo/inactivo corregida
       if (estado === "activos") {
         whereClause.activo = true;
       } else if (estado === "inactivos") {
         whereClause.activo = false;
       } else if (estado === "todos") {
-        // 🚀 Si es "todos", NO añadimos el filtro 'activo' al objeto whereClause.
-        // Esto le dice a Prisma: "trae todos los que tengan deletedAt: null, sin importar si activo es true o false".
+        // No añadimos filtro 'activo'
       } else {
-        // Por seguridad, si el frontend no envía ningún parámetro (?estado=...), 
-        // mandamos solo los activos por defecto.
         whereClause.activo = true;
       }
 
-      console.log("🔍 Aplicando filtro de búsqueda:", whereClause); // Para debug en consola
+      console.log("🔍 Aplicando filtro de búsqueda:", whereClause);
 
       const cursos = await prisma.curso.findMany({
         where: whereClause,
         include: {
           departamento: true,
-          categoria: true, // Incluimos la categoría para que la tabla tenga info completa
+          categoria: true,
           _count: { 
             select: { 
               inscripciones: { where: { deletedAt: null } } 
             } 
           },
         },
-        orderBy: { createdAt: "desc" } // Opcional: mostrar los más nuevos primero
+        orderBy: { createdAt: "desc" }
       });
 
       const adaptados = cursos.map((c) => ({
@@ -89,7 +87,7 @@ export async function GET(req: Request) {
   }
 }
 
-// ✅ POST - Crear un curso con auditoría
+// ✅ POST - Crear un curso con auditoría y Timeout aumentado
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -111,39 +109,43 @@ export async function POST(req: Request) {
       categoriaId,
       departamentoId,
       docentesInscritos = [],
-      activo = true // Valor por defecto si no viene en el body
+      activo = true
     } = body;
 
     if (!categoriaId) {
       return NextResponse.json({ error: "categoriaId es obligatorio" }, { status: 400 });
     }
 
-    const nuevoCurso = await prisma.curso.create({
-      data: {
-        nombre,
-        descripcion: descripcion || "",
-        codigo,
-        nivel: nivel || "",
-        tipo: tipo || "",
-        ano: Number(ano),
-        departamentoId: String(departamentoId),
-        instructor: instructor ? String(instructor) : undefined,
-        categoriaId: String(categoriaId),
-        activo: Boolean(activo),
-        // 📝 Auditoría
-        createdById: requesterId,
-        updatedById: requesterId,
-        inscripciones: {
-          create: docentesInscritos.map((userId: string) => ({ 
-            userId, 
-            createdById: requesterId 
-          })),
+    // Uso de transacción con timeout aumentado para manejar inscripciones masivas
+    const nuevoCurso = await prisma.$transaction(async (tx) => {
+      return await tx.curso.create({
+        data: {
+          nombre,
+          descripcion: descripcion || "",
+          codigo,
+          nivel: nivel || "",
+          tipo: tipo || "",
+          ano: Number(ano),
+          departamentoId: String(departamentoId),
+          instructor: instructor ? String(instructor) : undefined,
+          categoriaId: String(categoriaId),
+          activo: Boolean(activo),
+          createdById: requesterId,
+          updatedById: requesterId,
+          inscripciones: {
+            create: docentesInscritos.map((userId: string) => ({ 
+              userId, 
+              createdById: requesterId 
+            })),
+          },
         },
-      },
-      include: {
-        departamento: true,
-        inscripciones: { include: { usuario: true } },
-      },
+        include: {
+          departamento: true,
+          inscripciones: { include: { usuario: true } },
+        },
+      });
+    }, {
+      timeout: 20000 // 20 segundos para la operación de base de datos
     });
 
     return NextResponse.json(nuevoCurso, { status: 201 });
@@ -153,7 +155,7 @@ export async function POST(req: Request) {
   }
 }
 
-// ✅ PUT - Actualizar curso con auditoría y campo activo
+// ✅ PUT - Actualizar curso con auditoría y Timeout aumentado
 export async function PUT(req: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -164,7 +166,7 @@ export async function PUT(req: Request) {
 
     const requesterId = session.user.id;
     const url = new URL(req.url);
-    const id = url.searchParams.get("id") || req.url.split('/').pop(); // Intenta sacar el ID de query o de la ruta
+    const id = url.searchParams.get("id") || req.url.split('/').pop();
 
     if (!id || id.includes('route')) {
       return NextResponse.json({ error: "ID del curso no válido" }, { status: 400 });
@@ -178,78 +180,83 @@ export async function PUT(req: Request) {
       nivel,
       tipo,
       ano,
-      activo, // Se permite actualizar el estado activo/inactivo
+      activo,
       categoriaId,
       departamentoId,
       docentesInscritos = [],
-      inscripciones = [],
     } = body;
 
-    // 1. Actualizar datos base del curso con auditoría
-    const cursoActualizado = await prisma.curso.update({
-      where: { id },
-      data: {
-        nombre,
-        descripcion,
-        codigo,
-        nivel,
-        tipo,
-        activo: activo !== undefined ? Boolean(activo) : undefined,
-        ano: Number(ano),
-        categoriaId,
-        departamentoId,
-        updatedById: requesterId,
-      },
-    });
-
-    // 2. Gestionar inscripciones (Soft Delete para las quitadas)
-    const inscripcionesActuales = await prisma.inscripcionCurso.findMany({
-      where: { cursoId: id, deletedAt: null },
-    });
-
-    const nuevosIds = docentesInscritos.map((d: any) => (typeof d === 'string' ? d : d.userId));
-    const eliminados = inscripcionesActuales.filter(
-      (i) => !nuevosIds.includes(i.userId)
-    );
-
-    if (eliminados.length > 0) {
-      await prisma.inscripcionCurso.updateMany({
-        where: { id: { in: eliminados.map((e) => e.id) } },
-        data: { deletedAt: new Date(), deletedById: requesterId },
-      });
-    }
-
-    // 3. Crear nuevas o actualizar existentes
-    for (const d of docentesInscritos) {
-      const userId = typeof d === 'string' ? d : d.userId;
-      const estadoInsc = typeof d === 'string' ? "INSCRITO" : (d.estado || "INSCRITO");
-
-      await prisma.inscripcionCurso.upsert({
-        where: { userId_cursoId: { userId, cursoId: id } },
-        update: { 
-          estado: estadoInsc, 
-          deletedAt: null, // Si estaba borrado, lo recuperamos
-          updatedById: requesterId 
+    // Se envuelve todo el proceso en una transacción con timeout de 20s
+    const cursoFinal = await prisma.$transaction(async (tx) => {
+      // 1. Actualizar datos base
+      await tx.curso.update({
+        where: { id },
+        data: {
+          nombre,
+          descripcion,
+          codigo,
+          nivel,
+          tipo,
+          activo: activo !== undefined ? Boolean(activo) : undefined,
+          ano: Number(ano),
+          categoriaId,
+          departamentoId,
+          updatedById: requesterId,
         },
-        create: { 
-          userId, 
-          cursoId: id, 
-          estado: estadoInsc, 
-          createdById: requesterId 
-        }
       });
-    }
 
-    const cursoFinal = await prisma.curso.findUnique({
-      where: { id },
-      include: {
-        departamento: true,
-        categoria: true,
-        inscripciones: {
-          where: { deletedAt: null },
-          include: { usuario: true },
+      // 2. Gestionar inscripciones (Soft Delete)
+      const inscripcionesActuales = await tx.inscripcionCurso.findMany({
+        where: { cursoId: id, deletedAt: null },
+      });
+
+      const nuevosIds = docentesInscritos.map((d: any) => (typeof d === 'string' ? d : d.userId));
+      const eliminados = inscripcionesActuales.filter(
+        (i) => !nuevosIds.includes(i.userId)
+      );
+
+      if (eliminados.length > 0) {
+        await tx.inscripcionCurso.updateMany({
+          where: { id: { in: eliminados.map((e) => e.id) } },
+          data: { deletedAt: new Date(), deletedById: requesterId },
+        });
+      }
+
+      // 3. Crear nuevas o actualizar existentes (Bucle que requiere más tiempo)
+      for (const d of docentesInscritos) {
+        const userId = typeof d === 'string' ? d : d.userId;
+        const estadoInsc = typeof d === 'string' ? "INSCRITO" : (d.estado || "INSCRITO");
+
+        await tx.inscripcionCurso.upsert({
+          where: { userId_cursoId: { userId, cursoId: id } },
+          update: { 
+            estado: estadoInsc, 
+            deletedAt: null,
+            updatedById: requesterId 
+          },
+          create: { 
+            userId, 
+            cursoId: id, 
+            estado: estadoInsc, 
+            createdById: requesterId 
+          }
+        });
+      }
+
+      // 4. Obtener resultado final para retornar
+      return await tx.curso.findUnique({
+        where: { id },
+        include: {
+          departamento: true,
+          categoria: true,
+          inscripciones: {
+            where: { deletedAt: null },
+            include: { usuario: true },
+          },
         },
-      },
+      });
+    }, {
+      timeout: 20000 // Solución al error de Interactive Transaction timeout
     });
 
     return NextResponse.json(cursoFinal);
@@ -259,7 +266,7 @@ export async function PUT(req: Request) {
   }
 }
 
-// ✅ DELETE - Borrado Lógico (Soft Delete)
+// ✅ DELETE - Borrado Lógico con Transacción y Timeout
 export async function DELETE(req: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -274,19 +281,22 @@ export async function DELETE(req: Request) {
 
     if (!id) return NextResponse.json({ error: "ID requerido" }, { status: 400 });
 
-    // Soft delete: curso e inscripciones asociadas
-    await prisma.inscripcionCurso.updateMany({
-      where: { cursoId: id, deletedAt: null },
-      data: { deletedAt: new Date(), deletedById: requesterId }
-    });
+    await prisma.$transaction(async (tx) => {
+      await tx.inscripcionCurso.updateMany({
+        where: { cursoId: id, deletedAt: null },
+        data: { deletedAt: new Date(), deletedById: requesterId }
+      });
 
-    await prisma.curso.update({
-      where: { id },
-      data: { 
-        deletedAt: new Date(), 
-        deletedById: requesterId,
-        activo: false 
-      }
+      await tx.curso.update({
+        where: { id },
+        data: { 
+          deletedAt: new Date(), 
+          deletedById: requesterId,
+          activo: false 
+        }
+      });
+    }, {
+      timeout: 10000
     });
 
     return NextResponse.json({ message: "Curso eliminado lógicamente" });
