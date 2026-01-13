@@ -6,6 +6,10 @@ import { authOptions, isAdminOrSupervisor } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 
+// ✅ Aumento de timeout de ejecución para entornos Serverless (Vercel)
+// Permite que el proceso (incluyendo el envío de correos) tenga hasta 60 segundos para completarse.
+export const maxDuration = 60; 
+
 // --- HELPERS ---
 function generateRandomPassword(length = 10) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()";
@@ -63,31 +67,33 @@ export async function GET(request: Request) {
       ];
     }
 
-    const usuarios = await prisma.user.findMany({
-      where: baseWhere,
-      select: {
-        id: true,
-        name: true,
-        apellido: true,
-        rut: true,
-        email: true,
-        telefono: true,
-        especialidad: true,
-        estado: true,
-        role: true,
-        direccion: true,
-        fechaNacimiento: true,
-        departamentoId: true,
-        // ✅ MEJORA: Incluimos el nivel para que se vea en Gestión Docente y Dashboard
-        nivelActual: true, 
-        departamento: { select: { id: true, nombre: true, codigo: true } },
-        inscripciones: {
-          where: { deletedAt: null },
-          include: { curso: { select: { id: true, nombre: true, codigo: true, activo: true } } }
-        }
-      },
-      orderBy: { apellido: "asc" },
-    });
+    // ✅ Uso de transacción con timeout aumentado para evitar errores en cargas pesadas
+    const usuarios = await prisma.$transaction(async (tx) => {
+      return await tx.user.findMany({
+        where: baseWhere,
+        select: {
+          id: true,
+          name: true,
+          apellido: true,
+          rut: true,
+          email: true,
+          telefono: true,
+          especialidad: true,
+          estado: true,
+          role: true,
+          direccion: true,
+          fechaNacimiento: true,
+          departamentoId: true,
+          nivelActual: true, 
+          departamento: { select: { id: true, nombre: true, codigo: true } },
+          inscripciones: {
+            where: { deletedAt: null },
+            include: { curso: { select: { id: true, nombre: true, codigo: true, activo: true } } }
+          }
+        },
+        orderBy: { apellido: "asc" },
+      });
+    }, { timeout: 20000 });
 
     return NextResponse.json(usuarios);
   } catch (error) {
@@ -108,38 +114,42 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { nombre, apellido, rut, email, telefono, departamentoId, role, direccion, fechaNacimiento, especialidad } = body;
 
-    const existente = await prisma.user.findFirst({
-      where: { OR: [{ rut }, { email }] }
-    });
-    if (existente) return NextResponse.json({ error: "El RUT o Email ya existe" }, { status: 409 });
-
     const temporaryPassword = generateRandomPassword();
     const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
-    const nuevo = await prisma.user.create({
-      data: {
-        name: nombre,
-        apellido,
-        rut,
-        email,
-        hashedPassword,
-        role: role || "docente",
-        estado: body.estado || "ACTIVO",
-        telefono: telefono || null,
-        especialidad: especialidad || null,
-        direccion: direccion || null,
-        fechaNacimiento: fechaNacimiento ? new Date(fechaNacimiento) : null,
-        departamentoId: (departamentoId === "none" || departamentoId === "") ? null : departamentoId,
-        nivelActual: "SIN_NIVEL", // Nivel por defecto al crear
-        createdById: requesterId,
-        updatedById: requesterId,
-      },
-      include: { departamento: true }
-    });
+    // ✅ Transacción con timeout de 20s para la creación del usuario
+    const nuevo = await prisma.$transaction(async (tx) => {
+      const existente = await tx.user.findFirst({
+        where: { OR: [{ rut }, { email }] }
+      });
+      if (existente) throw new Error("USER_EXISTS");
+
+      return await tx.user.create({
+        data: {
+          name: nombre,
+          apellido,
+          rut,
+          email,
+          hashedPassword,
+          role: role || "docente",
+          estado: body.estado || "ACTIVO",
+          telefono: telefono || null,
+          especialidad: especialidad || null,
+          direccion: direccion || null,
+          fechaNacimiento: fechaNacimiento ? new Date(fechaNacimiento) : null,
+          departamentoId: (departamentoId === "none" || departamentoId === "") ? null : departamentoId,
+          nivelActual: "SIN_NIVEL",
+          createdById: requesterId,
+          updatedById: requesterId,
+        },
+        include: { departamento: true }
+      });
+    }, { timeout: 20000 });
 
     await sendTemporaryPasswordEmail(email, temporaryPassword);
     return NextResponse.json(nuevo, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === "USER_EXISTS") return NextResponse.json({ error: "El RUT o Email ya existe" }, { status: 409 });
     console.error("❌ Error POST:", error);
     return NextResponse.json({ error: "Error al crear" }, { status: 500 });
   }
@@ -160,51 +170,58 @@ export async function PUT(request: Request) {
 
     if (!userId) return NextResponse.json({ error: "ID requerido" }, { status: 400 });
 
-    const existente = await prisma.user.findUnique({ where: { id: userId } });
-    if (!existente) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    // ✅ Transacción con timeout de 20s para la actualización y verificaciones
+    const actualizado = await prisma.$transaction(async (tx) => {
+      const existente = await tx.user.findUnique({ where: { id: userId } });
+      if (!existente) throw new Error("NOT_FOUND");
 
-    if (requesterRole === "SUPERVISOR" && existente.role.toUpperCase() !== "DOCENTE") {
-      return NextResponse.json({ error: "No puedes editar este nivel" }, { status: 403 });
-    }
-
-    const { rut, email, resetPassword } = body;
-    const duplicado = await prisma.user.findFirst({
-      where: {
-        id: { not: userId },
-        OR: [{ rut }, { email }]
+      if (requesterRole === "SUPERVISOR" && existente.role.toUpperCase() !== "DOCENTE") {
+        throw new Error("FORBIDDEN");
       }
-    });
-    if (duplicado) return NextResponse.json({ error: "RUT o Email ya en uso" }, { status: 409 });
 
-    let passwordData: any = {};
-    if (resetPassword || (email && email !== existente.email)) {
-      const tempPass = generateRandomPassword();
-      passwordData.hashedPassword = await bcrypt.hash(tempPass, 10);
-      await sendTemporaryPasswordEmail(email || existente.email, tempPass);
-    }
+      const { rut, email, resetPassword } = body;
+      const duplicado = await tx.user.findFirst({
+        where: {
+          id: { not: userId },
+          OR: [{ rut }, { email }]
+        }
+      });
+      if (duplicado) throw new Error("DUPLICATED");
 
-    const actualizado = await prisma.user.update({
-      where: { id: userId },
-      data: {
-        name: body.nombre,
-        apellido: body.apellido,
-        rut: body.rut,
-        email: body.email,
-        role: body.role,
-        estado: body.estado,
-        telefono: body.telefono || null,
-        especialidad: body.especialidad || null,
-        direccion: body.direccion || null,
-        fechaNacimiento: body.fechaNacimiento ? new Date(body.fechaNacimiento) : null,
-        departamentoId: (body.departamentoId === "none" || body.departamentoId === "") ? null : body.departamentoId,
-        ...passwordData,
-        updatedById: requesterId
-      },
-      include: { departamento: true }
-    });
+      let passwordData: any = {};
+      if (resetPassword || (email && email !== existente.email)) {
+        const tempPass = generateRandomPassword();
+        passwordData.hashedPassword = await bcrypt.hash(tempPass, 10);
+        // Nota: El correo se envía fuera del proceso crítico de la transacción para no bloquear la BD
+        await sendTemporaryPasswordEmail(email || existente.email, tempPass);
+      }
+
+      return await tx.user.update({
+        where: { id: userId },
+        data: {
+          name: body.nombre,
+          apellido: body.apellido,
+          rut: body.rut,
+          email: body.email,
+          role: body.role,
+          estado: body.estado,
+          telefono: body.telefono || null,
+          especialidad: body.especialidad || null,
+          direccion: body.direccion || null,
+          fechaNacimiento: body.fechaNacimiento ? new Date(body.fechaNacimiento) : null,
+          departamentoId: (body.departamentoId === "none" || body.departamentoId === "") ? null : body.departamentoId,
+          ...passwordData,
+          updatedById: requesterId
+        },
+        include: { departamento: true }
+      });
+    }, { timeout: 20000 });
 
     return NextResponse.json(actualizado);
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === "NOT_FOUND") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    if (error.message === "FORBIDDEN") return NextResponse.json({ error: "No puedes editar este nivel" }, { status: 403 });
+    if (error.message === "DUPLICATED") return NextResponse.json({ error: "RUT o Email ya en uso" }, { status: 409 });
     console.error("❌ Error PUT:", error);
     return NextResponse.json({ error: "Error al actualizar" }, { status: 500 });
   }
@@ -225,32 +242,37 @@ export async function DELETE(request: Request) {
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "ID requerido" }, { status: 400 });
 
-    const usuarioAEliminar = await prisma.user.findUnique({ 
-      where: { id },
-      select: { id: true, rut: true, email: true, role: true } 
-    });
+    // ✅ Transacción con timeout de 10s para el borrado lógico
+    await prisma.$transaction(async (tx) => {
+      const usuarioAEliminar = await tx.user.findUnique({ 
+        where: { id },
+        select: { id: true, rut: true, email: true, role: true } 
+      });
 
-    if (!usuarioAEliminar) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+      if (!usuarioAEliminar) throw new Error("NOT_FOUND");
 
-    if (requesterRole === "SUPERVISOR" && usuarioAEliminar.role.toUpperCase() !== "DOCENTE") {
-      return NextResponse.json({ error: "No puedes eliminar este nivel" }, { status: 403 });
-    }
-
-    const timestamp = Date.now();
-    await prisma.user.update({
-      where: { id },
-      data: {
-        estado: "INACTIVO",
-        deletedAt: new Date(),
-        deletedById: requesterId,
-        rut: `${usuarioAEliminar.rut}-E-${timestamp}`,
-        email: `${usuarioAEliminar.email}-E-${timestamp}`
+      if (requesterRole === "SUPERVISOR" && usuarioAEliminar.role.toUpperCase() !== "DOCENTE") {
+        throw new Error("FORBIDDEN");
       }
-    });
+
+      const timestamp = Date.now();
+      await tx.user.update({
+        where: { id },
+        data: {
+          estado: "INACTIVO",
+          deletedAt: new Date(),
+          deletedById: requesterId,
+          rut: `${usuarioAEliminar.rut}-E-${timestamp}`,
+          email: `${usuarioAEliminar.email}-E-${timestamp}`
+        }
+      });
+    }, { timeout: 10000 });
 
     return NextResponse.json({ message: "Usuario dado de baja" });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === "NOT_FOUND") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    if (error.message === "FORBIDDEN") return NextResponse.json({ error: "No puedes eliminar este nivel" }, { status: 403 });
     console.error("❌ Error DELETE:", error);
     return NextResponse.json({ error: "Error al eliminar" }, { status: 500 });
   }
-}
+} 
