@@ -44,7 +44,7 @@ export default function GestionCursosPage() {
 
   const [cursoActual, setCursoActual] = useState<Curso | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false) // Corregido: antes estaba duplicada la declaración aquí
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false) 
   
   const [formData, setFormData] = useState({
     codigo: "",
@@ -122,7 +122,6 @@ export default function GestionCursosPage() {
       resultado = resultado.filter((c) => c.nivel === filtroNivel)
     }
 
-    // Lógica de filtrado por estado
     if (filtroEstado === "activos") {
       resultado = resultado.filter((c) => c.activo === true)
     } else if (filtroEstado === "inactivos") {
@@ -226,7 +225,8 @@ export default function GestionCursosPage() {
           </Link>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-4 mb-6">
+        {/* Barra de Filtros: se vuelve sticky si cabecerasFijadas es true */}
+        <div className={`flex flex-col md:flex-row gap-4 mb-6 bg-white z-20 ${cabecerasFijadas ? "sticky top-0 py-4 border-b" : ""}`}>
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <Input
@@ -243,11 +243,11 @@ export default function GestionCursosPage() {
             </Button>
             
             <Select value={filtroEstado} onValueChange={setFiltroEstado}>
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-[150px] bg-white">
                 <Filter className="mr-2 h-4 w-4" />
                 <SelectValue placeholder="Estado" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="bg-white opacity-100 z-[50]">
                 <SelectItem value="activos">Solo Activos</SelectItem>
                 <SelectItem value="inactivos">Solo Inactivos</SelectItem>
                 <SelectItem value="todos">Ver Todos</SelectItem>
@@ -256,12 +256,12 @@ export default function GestionCursosPage() {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="flex items-center">
+                <Button variant="outline" className="flex items-center bg-white">
                   <Filter className="mr-2 h-4 w-4" /> Departamento
                   <ChevronDown className="ml-2 h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent>
+              <DropdownMenuContent className="bg-white opacity-100 z-[50]">
                 <DropdownMenuItem onClick={() => setFiltroDepto("todos")}>Todos</DropdownMenuItem>
                 {departamentos.map((d) => (
                   <DropdownMenuItem key={d} onClick={() => setFiltroDepto(d)}>{d}</DropdownMenuItem>
@@ -275,21 +275,23 @@ export default function GestionCursosPage() {
           </div>
         </div>
 
-        <div className={`border rounded-md ${cabecerasFijadas ? "max-h-[70vh] overflow-y-auto" : "overflow-hidden"}`}>
-          <Table>
-            <TableHeader className={cabecerasFijadas ? "sticky top-0 bg-white z-10" : ""}>
-              <TableRow>
-                <TableHead className="border border-gray-300">Perfil curso</TableHead>
-                <TableHead className="border border-gray-300 w-15 min-w-[16rem] max-w-[20rem] text-center">Código</TableHead>
-                <TableHead className="border border-gray-300">Curso</TableHead>
-                <TableHead className="border border-gray-300">Descripción</TableHead>
-                <TableHead className="border border-gray-300">Nivel</TableHead>
-                <TableHead className="border border-gray-300">Estado</TableHead>
-                <TableHead className="border border-gray-300">Inscritos</TableHead>
-                <TableHead className="border border-gray-300">Tipo</TableHead>
-                <TableHead className="border border-gray-300">Año</TableHead>
-                <TableHead className="border border-gray-300">Departamento</TableHead>
-                <TableHead className="border border-gray-300 text-right">Acciones</TableHead>
+        {/* Tabla: el contenedor gestiona el scroll. Los TableHead usan sticky top-0 */}
+        <div className={`border rounded-md relative ${cabecerasFijadas ? "max-h-[70vh] overflow-y-auto scrollbar-thin" : "overflow-hidden"}`}>
+          <Table className="border-collapse">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                {/* Se aplica sticky top-0, z-10 y fondo blanco a cada encabezado individualmente para que la fila de títulos se fije correctamente */}
+                <TableHead className={`border border-gray-300 text-gray-900 font-bold bg-white ${cabecerasFijadas ? "sticky top-0 z-10 shadow-sm" : ""}`}>Perfil curso</TableHead>
+                <TableHead className={`border border-gray-300 w-15 min-w-[16rem] max-w-[20rem] text-center text-gray-900 font-bold bg-white ${cabecerasFijadas ? "sticky top-0 z-10 shadow-sm" : ""}`}>Código</TableHead>
+                <TableHead className={`border border-gray-300 text-gray-900 font-bold bg-white ${cabecerasFijadas ? "sticky top-0 z-10 shadow-sm" : ""}`}>Curso</TableHead>
+                <TableHead className={`border border-gray-300 text-gray-900 font-bold bg-white ${cabecerasFijadas ? "sticky top-0 z-10 shadow-sm" : ""}`}>Descripción</TableHead>
+                <TableHead className={`border border-gray-300 text-gray-900 font-bold bg-white ${cabecerasFijadas ? "sticky top-0 z-10 shadow-sm" : ""}`}>Nivel</TableHead>
+                <TableHead className={`border border-gray-300 text-gray-900 font-bold bg-white ${cabecerasFijadas ? "sticky top-0 z-10 shadow-sm" : ""}`}>Estado</TableHead>
+                <TableHead className={`border border-gray-300 text-gray-900 font-bold bg-white ${cabecerasFijadas ? "sticky top-0 z-10 shadow-sm" : ""}`}>Inscritos</TableHead>
+                <TableHead className={`border border-gray-300 text-gray-900 font-bold bg-white ${cabecerasFijadas ? "sticky top-0 z-10 shadow-sm" : ""}`}>Tipo</TableHead>
+                <TableHead className={`border border-gray-300 text-gray-900 font-bold bg-white ${cabecerasFijadas ? "sticky top-0 z-10 shadow-sm" : ""}`}>Año</TableHead>
+                <TableHead className={`border border-gray-300 text-gray-900 font-bold bg-white ${cabecerasFijadas ? "sticky top-0 z-10 shadow-sm" : ""}`}>Departamento</TableHead>
+                <TableHead className={`border border-gray-300 text-right text-gray-900 font-bold bg-white ${cabecerasFijadas ? "sticky top-0 z-10 shadow-sm" : ""}`}>Acciones</TableHead>
               </TableRow>
             </TableHeader>
 
@@ -357,9 +359,9 @@ export default function GestionCursosPage() {
         </div>
       </div>
 
-      {/* Diálogo de crear/editar (Restaurado completamente) */}
+      {/* Diálogo de crear/editar */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-white">
           <DialogHeader>
             <DialogTitle>{cursoActual ? "Editar Curso" : "Nuevo Curso"}</DialogTitle>
             <DialogDescription>{cursoActual ? "Modifica los datos del curso." : "Completa el formulario para agregar un curso."}</DialogDescription>
@@ -368,10 +370,10 @@ export default function GestionCursosPage() {
             <div className="flex flex-col gap-2">
               <Label htmlFor="nivel">Nivel</Label>
               <Select value={formData.nivel} onValueChange={(value) => setFormData({ ...formData, nivel: value as any })}>
-                <SelectTrigger id="nivel">
+                <SelectTrigger id="nivel" className="bg-white">
                   <SelectValue placeholder="Selecciona nivel" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-white">
                   <SelectItem value="Inicial">Inicial</SelectItem>
                   <SelectItem value="Intermedio">Intermedio</SelectItem>
                   <SelectItem value="Avanzado">Avanzado</SelectItem>
@@ -390,9 +392,9 @@ export default function GestionCursosPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Diálogo de eliminar (Restaurado completamente) */}
+      {/* Diálogo de eliminar */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-[400px]">
+        <DialogContent className="sm:max-w-[400px] bg-white">
           <DialogHeader>
             <DialogTitle>Eliminar Curso</DialogTitle>
             <DialogDescription>

@@ -384,11 +384,11 @@ export default function Page() {
             </Button>
             
             <Select value={filtroEstado} onValueChange={setFiltroEstado}>
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger className="w-[140px] bg-white">
                 <Filter className="mr-2 h-4 w-4" />
                 <SelectValue placeholder="Estado" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="bg-white opacity-100 z-50">
                 <SelectItem value="activos">Solo Activos</SelectItem>
                 <SelectItem value="inactivos">Solo Inactivos</SelectItem>
                 <SelectItem value="todos">Ver Todos</SelectItem>
@@ -397,15 +397,15 @@ export default function Page() {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm"><Filter className="mr-2 h-4 w-4" /> Depto.</Button>
+                <Button variant="outline" size="sm" className="bg-white"><Filter className="mr-2 h-4 w-4" /> Depto.</Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="bg-white">
+              <DropdownMenuContent className="bg-white opacity-100 z-50">
                 <DropdownMenuItem onClick={() => setFiltroDepto("todos")}>Todos</DropdownMenuItem>
                 {departamentos.map(d => <DropdownMenuItem key={d.id} onClick={() => setFiltroDepto(d.nombre)}>{d.nombre}</DropdownMenuItem>)}
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button variant="outline" size="icon" onClick={() => { setBusqueda(""); setFiltroDepto("todos"); setFiltroEstado("activos"); }}>
+            <Button variant="outline" size="icon" className="bg-white" onClick={() => { setBusqueda(""); setFiltroDepto("todos"); setFiltroEstado("activos"); }}>
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -415,30 +415,30 @@ export default function Page() {
           <Table>
             <TableHeader className={cabecerasFijadas ? "sticky top-0 bg-white z-10" : ""}>
               <TableRow>
-                <TableHead rowSpan={3} className="border border-gray-300">Nombre</TableHead>
-                <TableHead rowSpan={3} className="border border-gray-300 text-center">RUT</TableHead>
-                <TableHead rowSpan={3} className="border border-gray-300">Email</TableHead>
-                <TableHead rowSpan={3} className="border border-gray-300">Departamento</TableHead>
-                <TableHead rowSpan={3} className="border border-gray-300 text-center">Estado</TableHead>
-                <TableHead rowSpan={3} className="border border-gray-300 text-center">Perfil</TableHead>
+                <TableHead rowSpan={3} className="border border-gray-300 bg-white">Nombre</TableHead>
+                <TableHead rowSpan={3} className="border border-gray-300 text-center bg-white">RUT</TableHead>
+                <TableHead rowSpan={3} className="border border-gray-300 bg-white">Email</TableHead>
+                <TableHead rowSpan={3} className="border border-gray-300 bg-white">Departamento</TableHead>
+                <TableHead rowSpan={3} className="border border-gray-300 text-center bg-white">Estado</TableHead>
+                <TableHead rowSpan={3} className="border border-gray-300 text-center bg-white">Perfil</TableHead>
                 <TableHead colSpan={1} className="text-center border border-gray-300 bg-gray-50 text-[11px] font-bold">INICIAL</TableHead>
                 <TableHead colSpan={9} className="text-center border border-gray-300 bg-gray-50 text-[11px] font-bold">INTERMEDIO</TableHead>
                 <TableHead colSpan={3} className="text-center border border-gray-300 bg-gray-50 text-[11px] font-bold">AVANZADO</TableHead>
-                <TableHead rowSpan={3} className="text-center border border-gray-300">Nivel</TableHead>
-                <TableHead rowSpan={3} className="text-right border border-gray-300">Acciones</TableHead>
+                <TableHead rowSpan={3} className="text-center border border-gray-300 bg-white">Nivel</TableHead>
+                <TableHead rowSpan={3} className="text-right border border-gray-300 bg-white">Acciones</TableHead>
               </TableRow>
               <TableRow>
-                <TableHead className="text-center border border-gray-300 text-[10px]">MODELO EDUCATIVO</TableHead>
-                <TableHead colSpan={2} className="text-center border border-gray-300 text-[10px]">AMBIENTES PROPICIOS</TableHead>
-                <TableHead colSpan={2} className="text-center border border-gray-300 text-[10px]">ENSEÑANZA EN AULA</TableHead>
-                <TableHead className="text-center border border-gray-300 text-[10px]">PLANIFICACIÓN</TableHead>
-                <TableHead colSpan={4} className="text-center border border-gray-300 text-[10px]">REFLEXIÓN DOCENTE</TableHead>
-                <TableHead colSpan={2} className="text-center border border-gray-300 text-[10px]">METODOLOGÍAS VINCULADAS</TableHead>
-                <TableHead className="text-center border border-gray-300 text-[10px]">DIDÁCTICA</TableHead>
+                <TableHead className="text-center border border-gray-300 text-[10px] bg-white">MODELO EDUCATIVO</TableHead>
+                <TableHead colSpan={2} className="text-center border border-gray-300 text-[10px] bg-white">AMBIENTES PROPICIOS</TableHead>
+                <TableHead colSpan={2} className="text-center border border-gray-300 text-[10px] bg-white">ENSEÑANZA EN AULA</TableHead>
+                <TableHead className="text-center border border-gray-300 text-[10px] bg-white">PLANIFICACIÓN</TableHead>
+                <TableHead colSpan={4} className="text-center border border-gray-300 text-[10px] bg-white">REFLEXIÓN DOCENTE</TableHead>
+                <TableHead colSpan={2} className="text-center border border-gray-300 text-[10px] bg-white">METODOLOGÍAS VINCULADAS</TableHead>
+                <TableHead className="text-center border border-gray-300 text-[10px] bg-white">DIDÁCTICA</TableHead>
               </TableRow>
               <TableRow>
                 {["Mod.", "Gén.", "Incl.", "Act.", "Eval.", "Plan.", "DEDU", "DIDU", "Conc.", "A+S", "STEM", "COIL", "Didác."].map(h => (
-                  <TableHead key={h} className="text-center border border-gray-300 text-[9px] p-1">{h}</TableHead>
+                  <TableHead key={h} className="text-center border border-gray-300 text-[9px] p-1 bg-white">{h}</TableHead>
                 ))}
               </TableRow>
             </TableHeader>
@@ -522,7 +522,7 @@ export default function Page() {
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-md bg-white">
+        <DialogContent className="max-w-md bg-white opacity-100">
           <DialogHeader>
             <div className="flex justify-between items-center mr-8">
               <DialogTitle>{userActual ? "Editar Perfil Docente" : "Registrar Nuevo Docente"}</DialogTitle>
@@ -544,8 +544,8 @@ export default function Page() {
              <div className="space-y-1">
                 <Label>Departamento</Label>
                 <Select value={formData.departamentoId || "none"} onValueChange={(v) => v === "__crear__" ? setShowCrearDepartamento(true) : setFormData({...formData, departamentoId: v === "none" ? "" : v})}>
-                  <SelectTrigger className="h-8"><SelectValue placeholder="Selecciona..." /></SelectTrigger>
-                  <SelectContent>
+                  <SelectTrigger className="h-8 bg-white"><SelectValue placeholder="Selecciona..." /></SelectTrigger>
+                  <SelectContent className="bg-white opacity-100 z-50">
                     <SelectItem value="none">-- ninguno --</SelectItem>
                     {departamentos.map(d => <SelectItem key={d.id} value={d.id}>{d.nombre}</SelectItem>)}
                     <SelectItem value="__crear__" className="text-blue-600 font-bold">+ Nuevo Depto.</SelectItem>
@@ -567,8 +567,8 @@ export default function Page() {
              <div className="space-y-1">
                 <Label>Rol</Label>
                 <Select value={formData.role} onValueChange={v => setFormData({...formData, role: v})}>
-                   <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                   <SelectContent>
+                   <SelectTrigger className="h-8 bg-white"><SelectValue /></SelectTrigger>
+                   <SelectContent className="bg-white opacity-100 z-50">
                       <SelectItem value="docente">Docente</SelectItem>
                       {session?.user?.role?.toLowerCase() === "admin" && <SelectItem value="supervisor">Supervisor</SelectItem>}
                    </SelectContent>
@@ -585,7 +585,7 @@ export default function Page() {
       </Dialog>
 
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="bg-white">
+        <DialogContent className="bg-white opacity-100">
           <DialogHeader>
             <DialogTitle className="text-red-600 font-bold uppercase">Baja Administrativa</DialogTitle>
             <DialogDescription className="pt-2">
@@ -605,7 +605,7 @@ export default function Page() {
 
       {/* ✅ VENTANA DE ERROR PARA RUT O EMAIL REPETIDO (CON BOTÓN ACEPTAR) */}
       <Dialog open={isErrorDialogOpen} onOpenChange={setIsErrorDialogOpen}>
-        <DialogContent className="max-w-[400px] bg-white">
+        <DialogContent className="max-w-[400px] bg-white opacity-100">
           <DialogHeader>
             <div className="mx-auto bg-red-100 w-12 h-12 rounded-full flex items-center justify-center mb-4">
               <AlertTriangle className="text-red-600 h-6 w-6" />
