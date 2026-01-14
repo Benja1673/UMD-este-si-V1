@@ -1,7 +1,16 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { FileText, Download, Loader2 } from "lucide-react"
+import { FileText, Send, Loader2, CheckCircle2 } from "lucide-react"
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription, 
+  DialogFooter 
+} from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 
 type Certificado = {
   id: string
@@ -19,7 +28,10 @@ export default function CertificadosList() {
   const [certificados, setCertificados] = useState<Certificado[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [generandoPdf, setGenerandoPdf] = useState<string | null>(null)
+  const [solicitandoId, setSolicitandoId] = useState<string | null>(null)
+  
+  // Estado para la ventana de éxito
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false)
 
   useEffect(() => {
     fetchCertificados()
@@ -48,22 +60,21 @@ export default function CertificadosList() {
     }
   }
 
-  const handleDescargar = async (certificado: Certificado) => {
-    // Si tiene URL de archivo, descargar
+  const handleSolicitar = async (certificado: Certificado) => {
+    // Si es un archivo externo o URL directa, mantenemos la descarga/apertura
     if (certificado.urlArchivo) {
       window.open(certificado.urlArchivo, '_blank', 'noopener,noreferrer')
       return
     } 
     
-    // Si la descripción es una URL, abrirla
     if (certificado.descripcion && certificado.descripcion.startsWith('http')) {
       window.open(certificado.descripcion, '_blank', 'noopener,noreferrer')
       return
     }
     
-    // Generar certificado PDF
+    // FLUJO NUEVO: Solicitar firma vía correo
     try {
-      setGenerandoPdf(certificado.id)
+      setSolicitandoId(certificado.id)
       
       const res = await fetch('/api/certificados/generar', {
         method: 'POST',
@@ -75,30 +86,21 @@ export default function CertificadosList() {
         })
       })
 
+      const data = await res.json()
+
       if (!res.ok) {
-        const errorData = await res.json()
-        throw new Error(errorData.error || 'Error al generar certificado')
+        throw new Error(data.error || 'Error al solicitar certificado')
       }
 
-      // Descargar el PDF
-      const blob = await res.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `Certificado_${certificado.titulo.replace(/\s+/g, '_')}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
+      // En lugar de descargar, mostramos el diálogo de éxito
+      setShowSuccessDialog(true)
       
     } catch (error: any) {
-      console.error('Error generando certificado:', error)
-      setError(`Error al generar certificado: ${error.message}`)
-      
-      // Limpiar error después de 5 segundos
+      console.error('Error solicitando certificado:', error)
+      setError(`Error al solicitar certificado: ${error.message}`)
       setTimeout(() => setError(null), 5000)
     } finally {
-      setGenerandoPdf(null)
+      setSolicitandoId(null)
     }
   }
 
@@ -113,14 +115,12 @@ export default function CertificadosList() {
 
   const certificadoDisponible = (certificado: Certificado) => {
     if (certificado.activo === false) return false
-    
     if (certificado.fechaVencimiento) {
       const ahora = new Date()
       if (new Date(certificado.fechaVencimiento) < ahora) {
         return false
       }
     }
-    
     return true
   }
 
@@ -160,7 +160,6 @@ export default function CertificadosList() {
         <h4 className="font-medium text-gray-900 mb-2">No hay certificados disponibles</h4>
         <p className="text-sm text-gray-500">
           En este momento no tienes acceso a ningún certificado. 
-          Puede que necesites completar ciertos cursos o cumplir requisitos específicos.
         </p>
       </div>
     )
@@ -172,7 +171,7 @@ export default function CertificadosList() {
         const disponible = certificadoDisponible(certificado)
         const vigente = certificadoVigente(certificado)
         const ultimaActualizacion = certificado.fechaEmision
-        const estaGenerando = generandoPdf === certificado.id
+        const estaSolicitando = solicitandoId === certificado.id
 
         return (
           <div
@@ -188,48 +187,18 @@ export default function CertificadosList() {
               <div className="ml-4 flex-1">
                 <div className="flex items-center gap-2">
                   <h4 className="font-medium">{certificado.titulo}</h4>
-                  
-                  {!vigente && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-                      Vencido
-                    </span>
-                  )}
-                  
-                  {!disponible && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                      No disponible
-                    </span>
-                  )}
-                  
-                  {certificado.codigoVerificacion && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                      Verificable
-                    </span>
-                  )}
+                  {!vigente && <span className="px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">Vencido</span>}
+                  {!disponible && <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">No disponible</span>}
                 </div>
-                
                 {certificado.descripcion && !certificado.descripcion.startsWith('http') && (
                   <p className="text-sm text-gray-500 mt-1">{certificado.descripcion}</p>
                 )}
-                
                 <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
-                  {certificado.tipo && (
-                    <span className="capitalize">{certificado.tipo}</span>
-                  )}
-                  
-                  {ultimaActualizacion && (
-                    <span>Última actualización: {formatearFecha(ultimaActualizacion)}</span>
-                  )}
-                  
+                  {certificado.tipo && <span className="capitalize">{certificado.tipo}</span>}
+                  {ultimaActualizacion && <span>Emisión: {formatearFecha(ultimaActualizacion)}</span>}
                   {certificado.fechaVencimiento && (
                     <span className={vigente ? "text-gray-600" : "text-red-600 font-medium"}>
                       {vigente ? 'Vigente hasta' : 'Venció'}: {formatearFecha(certificado.fechaVencimiento)}
-                    </span>
-                  )}
-                  
-                  {certificado.codigoVerificacion && (
-                    <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">
-                      {certificado.codigoVerificacion}
                     </span>
                   )}
                 </div>
@@ -237,25 +206,25 @@ export default function CertificadosList() {
             </div>
             
             <button
-              onClick={() => handleDescargar(certificado)}
-              className={`flex items-center px-4 py-2 rounded-md whitespace-nowrap ml-4 ${
-                disponible && !estaGenerando
+              onClick={() => handleSolicitar(certificado)}
+              className={`flex items-center px-4 py-2 rounded-md whitespace-nowrap ml-4 transition-colors ${
+                disponible && !estaSolicitando
                   ? "bg-blue-600 text-white hover:bg-blue-700"
-                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-gray-200 text-gray-500 cursor-not-allowed"
               }`}
-              disabled={!disponible || estaGenerando}
+              disabled={!disponible || estaSolicitando}
             >
-              {estaGenerando ? (
+              {estaSolicitando ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Generando...
+                  Solicitando...
                 </>
               ) : (
                 <>
-                  <Download className="h-4 w-4 mr-2" />
+                  <Send className="h-4 w-4 mr-2" />
                   {certificado.urlArchivo || (certificado.descripcion && certificado.descripcion.startsWith('http')) 
                     ? 'Descargar' 
-                    : 'Generar'
+                    : 'Solicitar Certificado'
                   }
                 </>
               )}
@@ -263,6 +232,34 @@ export default function CertificadosList() {
           </div>
         )
       })}
+
+      {/* ✅ VENTANA EMERGENTE DE ÉXITO */}
+      <Dialog open={showSuccessDialog} onOpenChange={setShowSuccessDialog}>
+        <DialogContent className="bg-white sm:max-w-[425px]">
+          <DialogHeader>
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100 mb-4">
+              <CheckCircle2 className="h-6 w-6 text-green-600" />
+            </div>
+            <DialogTitle className="text-center text-xl font-bold text-gray-900">
+              Certificado solicitado
+            </DialogTitle>
+            <DialogDescription className="text-center text-gray-600 pt-2">
+              El certificado generado se ha enviado a la <strong>UMD</strong> para gestionar la firma correspondiente. 
+              <br /><br />
+              Queda pendiente su entrega una vez finalizado el proceso administrativo.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-center mt-4">
+            <Button 
+              type="button" 
+              className="bg-blue-600 hover:bg-blue-700 text-white w-full"
+              onClick={() => setShowSuccessDialog(false)}
+            >
+              Entendido
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

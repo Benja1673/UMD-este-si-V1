@@ -12,7 +12,8 @@ interface BreadcrumbNavProps {
 export default function BreadcrumbNav({ current, parent }: BreadcrumbNavProps) {
   return (
     <div className="flex items-center text-sm text-gray-500 mb-4">
-      <Link href="/" className="flex items-center hover:text-blue-600">
+      {/* Cambio de "/" a "/dashboard" para ir al panel principal */}
+      <Link href="/dashboard" className="flex items-center hover:text-blue-600">
         <span>INICIO</span>
       </Link>
 
@@ -26,7 +27,7 @@ export default function BreadcrumbNav({ current, parent }: BreadcrumbNavProps) {
       )}
 
       <ChevronRight className="h-4 w-4 mx-2" />
-      <span className="text-orange-500">{current}</span>
+      <span className="text-orange-500 font-medium uppercase">{current}</span>
     </div>
   )
 }

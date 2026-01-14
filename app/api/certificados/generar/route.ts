@@ -1,13 +1,12 @@
+// app/api/certificados/generar/route.ts
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import nodemailer from "nodemailer"; // ✅ Importamos nodemailer
 
 // ✅ Aumento de timeout de ejecución para entornos Serverless (Vercel)
-// Esto permite que el proceso de Puppeteer tenga hasta 60 segundos para completar la tarea.
 export const maxDuration = 60; 
-
-// NO importamos puppeteer arriba.
 
 export async function POST(req: Request) {
   try {
@@ -23,10 +22,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "certificadoId es requerido" }, { status: 400 });
     }
 
-    // 1. Obtener datos
+    // 1. Obtener datos del usuario incluyendo el email para el cuerpo del correo
     const usuario = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { name: true, apellido: true, rut: true }
+      select: { name: true, apellido: true, rut: true, email: true }
     });
 
     if (!usuario) return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
@@ -42,9 +41,10 @@ export async function POST(req: Request) {
       include: { departamento: true }
     });
 
-    // 2. Variables
+    // 2. Variables para el documento y correo
     const nombreCompleto = `${usuario.name || ''} ${usuario.apellido || ''}`.trim();
     const rut = usuario.rut || 'Sin RUT';
+    const emailSolicitante = usuario.email || 'Sin correo';
     const nombreCurso = curso?.nombre || certificado.titulo;
     const semestre = curso?.semestre || 1;
     const anio = curso?.ano || new Date().getFullYear();
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     const mes = meses[fechaActual.getMonth()];
     const anioEmision = fechaActual.getFullYear();
 
-    // 3. HTML
+    // 3. HTML del Certificado (Mantenemos tu diseño)
     const html = `
 <!DOCTYPE html>
 <html lang="es">
@@ -113,21 +113,13 @@ export async function POST(req: Request) {
 </html>
     `;
 
-    // 4. LÓGICA DEL NAVEGADOR
+    // 4. LÓGICA DEL NAVEGADOR PARA GENERAR EL BUFFER DEL PDF
     let browser;
-    
-    // DETECCIÓN ROBUSTA: Si estamos en Vercel O en modo producción
     const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-    console.log("Generando PDF. Entorno Vercel/Prod detectado:", isVercel);
-
     if (isVercel) {
-      // ☁️ MODO VERCEL
-      console.log("Usando @sparticuz/chromium...");
       const chromium = require('@sparticuz/chromium');
       const puppeteerCore = require('puppeteer-core');
-
-      // Forzar modo sin gráficos para que no pese tanto
       chromium.setGraphicsMode = false;
       
       browser = await puppeteerCore.launch({
@@ -136,10 +128,7 @@ export async function POST(req: Request) {
         executablePath: await chromium.executablePath(),
         headless: chromium.headless,
       });
-
     } else {
-      // 💻 MODO LOCAL
-      console.log("Usando Puppeteer local...");
       const puppeteer = require('puppeteer');
       browser = await puppeteer.launch({
         headless: true,
@@ -157,17 +146,41 @@ export async function POST(req: Request) {
 
     await browser.close();
 
-    return new NextResponse(Buffer.from(pdfBuffer), {
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="Certificado_${nombreCompleto.replace(/\s+/g, '_')}.pdf"`
-      }
+    // 5. ENVÍO DE CORREO A UMD
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: "proyectoumd@gmail.com", // ✅ Correo destino UMD
+      subject: `Solicitud de Firma de Certificado: ${nombreCompleto}`,
+      text: `${nombreCompleto}, rut ${rut}, con correo ${emailSolicitante}, ha solicitado este certificado de ${nombreCurso}. Está pendiente a firma.`,
+      attachments: [
+        {
+          filename: `Certificado_${nombreCompleto.replace(/\s+/g, '_')}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf'
+        },
+      ],
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    // 6. RESPUESTA EXITOSA (Sin descargar el archivo)
+    return NextResponse.json({ 
+      success: true, 
+      message: "Certificado solicitado. El documento generado se ha enviado a UMD para gestionar la firma. Queda pendiente su entrega." 
     });
 
   } catch (error: any) {
-    console.error("Error FATAL generando certificado:", error);
+    console.error("Error FATAL generando/enviando certificado:", error);
     return NextResponse.json(
-      { error: "Error al generar certificado", details: error.message },
+      { error: "Error al procesar la solicitud de certificado", details: error.message },
       { status: 500 }
     );
   }
