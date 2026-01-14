@@ -3,7 +3,7 @@
 import type React from "react"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Search, ChevronLeft, ChevronRight, Filter, CheckCircle2, AlertCircle } from "lucide-react"
+import { Search, ChevronLeft, ChevronRight, Filter, CheckCircle2, AlertCircle, Calendar } from "lucide-react"
 import BreadcrumbNav from "@/components/breadcrumb-nav"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -43,13 +43,19 @@ export default function CrearCursoPage() {
     nombre: "",
     descripcion: "",
     codigo: "",
-    nivel: "",
+    nivel: "General",
     instructor: "",
-    tipo: "",
+    tipo: "Curso",
     ano: new Date().getFullYear().toString(),
     categoriaId: "",
     departamentoId: "",
-    activo: true, // ✅ Nuevo: Estado inicial del curso
+    activo: true,
+    // Nuevos campos solicitados
+    duracion: "",
+    semestre: "",
+    modalidad: "",
+    fechaInicio: "",
+    fechaFin: "",
   })
 
   const [docentesInscritos, setDocentesInscritos] = useState<Docente[]>([])
@@ -111,7 +117,9 @@ export default function CrearCursoPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...cursoData,
-          docentesInscritos: docentesInscritos.map((d) => d.id),
+          duracion: cursoData.duracion ? Number(cursoData.duracion) : null,
+          semestre: cursoData.semestre ? Number(cursoData.semestre) : null,
+          docentesInscritos: docentesInscritos.map((d) => ({ userId: d.id, estado: "INSCRITO" })),
         }),
       })
 
@@ -198,8 +206,8 @@ export default function CrearCursoPage() {
               <div className="flex flex-col gap-2">
                 <Label htmlFor="nivel">Nivel</Label>
                 <Select value={cursoData.nivel} onValueChange={(v) => handleSelectChange("nivel", v)}>
-                  <SelectTrigger id="nivel"><SelectValue placeholder="Selecciona un nivel" /></SelectTrigger>
-                  <SelectContent>
+                  <SelectTrigger id="nivel" className="bg-white"><SelectValue placeholder="Selecciona un nivel" /></SelectTrigger>
+                  <SelectContent className="bg-white z-50">
                     <SelectItem value="Inicial">Inicial</SelectItem>
                     <SelectItem value="Intermedio">Intermedio</SelectItem>
                     <SelectItem value="Avanzado">Avanzado</SelectItem>
@@ -210,8 +218,8 @@ export default function CrearCursoPage() {
               <div className="flex flex-col gap-2">
                 <Label htmlFor="tipo">Tipo</Label>
                 <Select value={cursoData.tipo} onValueChange={(v) => handleSelectChange("tipo", v)}>
-                  <SelectTrigger id="tipo"><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger>
-                  <SelectContent>
+                  <SelectTrigger id="tipo" className="bg-white"><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger>
+                  <SelectContent className="bg-white z-50">
                     <SelectItem value="Teórico">Teórico</SelectItem>
                     <SelectItem value="Práctico">Práctico</SelectItem>
                     <SelectItem value="Teórico-Práctico">Teórico-Práctico</SelectItem>
@@ -226,20 +234,55 @@ export default function CrearCursoPage() {
                 <Label htmlFor="instructor">Instructor Principal</Label>
                 <Input id="instructor" name="instructor" value={cursoData.instructor} onChange={handleInputChange} placeholder="Nombre del instructor" />
               </div>
+
+              {/* Nuevos campos integrados */}
               <div className="flex flex-col gap-2">
-                <Label htmlFor="categoriaId">Categoría *</Label>
-                <Select value={cursoData.categoriaId} onValueChange={(v) => handleSelectChange("categoriaId", v)}>
-                  <SelectTrigger id="categoriaId"><SelectValue placeholder="Selecciona una categoría" /></SelectTrigger>
-                  <SelectContent>
-                    {categorias.map((cat) => <SelectItem key={cat.id} value={cat.id}>{cat.nombre}</SelectItem>)}
+                <Label htmlFor="duracion">Duración (Horas)</Label>
+                <Input id="duracion" name="duracion" type="number" value={cursoData.duracion} onChange={handleInputChange} placeholder="Ej: 40" />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="semestre">Semestre</Label>
+                <Select value={cursoData.semestre} onValueChange={(v) => handleSelectChange("semestre", v)}>
+                  <SelectTrigger id="semestre" className="bg-white"><SelectValue placeholder="Selecciona semestre" /></SelectTrigger>
+                  <SelectContent className="bg-white z-50">
+                    <SelectItem value="1">Semestre 1</SelectItem>
+                    <SelectItem value="2">Semestre 2</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex flex-col gap-2">
+                <Label htmlFor="modalidad">Modalidad</Label>
+                <Select value={cursoData.modalidad} onValueChange={(v) => handleSelectChange("modalidad", v)}>
+                  <SelectTrigger id="modalidad" className="bg-white"><SelectValue placeholder="Selecciona modalidad" /></SelectTrigger>
+                  <SelectContent className="bg-white z-50">
+                    <SelectItem value="Online">Online</SelectItem>
+                    <SelectItem value="Presencial">Presencial</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="fechaInicio">Fecha de Inicio</Label>
+                <Input id="fechaInicio" name="fechaInicio" type="date" value={cursoData.fechaInicio} onChange={handleInputChange} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="fechaFin">Fecha de Finalización</Label>
+                <Input id="fechaFin" name="fechaFin" type="date" value={cursoData.fechaFin} onChange={handleInputChange} />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="categoriaId">Categoría *</Label>
+                <Select value={cursoData.categoriaId} onValueChange={(v) => handleSelectChange("categoriaId", v)}>
+                  <SelectTrigger id="categoriaId" className="bg-white"><SelectValue placeholder="Selecciona una categoría" /></SelectTrigger>
+                  <SelectContent className="bg-white z-50">
+                    {categorias.map((cat) => <SelectItem key={cat.id} value={cat.id}>{cat.nombre}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2 lg:col-span-2">
                 <Label htmlFor="departamentoId">Departamento *</Label>
                 <Select value={cursoData.departamentoId} onValueChange={(v) => handleSelectChange("departamentoId", v)}>
-                  <SelectTrigger id="departamentoId"><SelectValue placeholder="Selecciona un departamento" /></SelectTrigger>
-                  <SelectContent>
+                  <SelectTrigger id="departamentoId" className="bg-white"><SelectValue placeholder="Selecciona un departamento" /></SelectTrigger>
+                  <SelectContent className="bg-white z-50">
                     {departamentos.map((depto) => <SelectItem key={depto.id} value={depto.id}>{depto.nombre}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -260,7 +303,7 @@ export default function CrearCursoPage() {
                 <h3 className="font-semibold mb-3 text-gray-700">Docentes Inscritos ({docentesInscritos.length})</h3>
                 <div className="border rounded-md h-96 overflow-y-auto">
                   <Table>
-                    <TableHeader className="sticky top-0 bg-white">
+                    <TableHeader className="sticky top-0 bg-white z-10">
                       <TableRow>
                         <TableHead className="w-12"></TableHead>
                         <TableHead>Nombre</TableHead>
@@ -298,15 +341,15 @@ export default function CrearCursoPage() {
                   </div>
                   <div className="flex gap-2">
                     <DropdownMenu>
-                      <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="flex-1">Depto.</Button></DropdownMenuTrigger>
-                      <DropdownMenuContent>
+                      <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="flex-1 bg-white">Depto.</Button></DropdownMenuTrigger>
+                      <DropdownMenuContent className="bg-white z-50">
                         <DropdownMenuItem onClick={() => setFiltroDepartamento("todos")}>Todos</DropdownMenuItem>
                         {departamentosDocentes.map((depto) => <DropdownMenuItem key={depto} onClick={() => setFiltroDepartamento(depto)}>{depto}</DropdownMenuItem>)}
                       </DropdownMenuContent>
                     </DropdownMenu>
                     <DropdownMenu>
-                      <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="flex-1">Especialidad</Button></DropdownMenuTrigger>
-                      <DropdownMenuContent>
+                      <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="flex-1 bg-white">Especialidad</Button></DropdownMenuTrigger>
+                      <DropdownMenuContent className="bg-white z-50">
                         <DropdownMenuItem onClick={() => setFiltroEspecialidad("todos")}>Todas</DropdownMenuItem>
                         {especialidades.map((esp) => <DropdownMenuItem key={esp} onClick={() => setFiltroEspecialidad(esp)}>{esp}</DropdownMenuItem>)}
                       </DropdownMenuContent>
@@ -315,7 +358,7 @@ export default function CrearCursoPage() {
                 </div>
                 <div className="border rounded-md h-96 overflow-y-auto">
                   <Table>
-                    <TableHeader className="sticky top-0 bg-white">
+                    <TableHeader className="sticky top-0 bg-white z-10">
                       <TableRow>
                         <TableHead className="w-12"></TableHead>
                         <TableHead>Nombre</TableHead>

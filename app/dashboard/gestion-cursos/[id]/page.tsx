@@ -29,7 +29,7 @@ export default function CursoPage() {
 
         const data = await res.json()
 
-        // 🔹 Adaptar los datos del curso incluyendo el nuevo estado 'activo'
+        // 🔹 Adaptar los datos del curso incluyendo los campos nuevos para que se vean en el card
         setCurso({
           id: data.id,
           codigo: data.codigo ?? "",
@@ -41,12 +41,17 @@ export default function CursoPage() {
           tipo: data.tipo ?? "",
           ano: data.ano ?? new Date().getFullYear(),
           departamento: data.departamento?.nombre ?? "",
-          estado: data.activo ? "Activo" : "Inactivo", // ✅ Refleja el estado real en DB
+          estado: data.activo ? "Activo" : "Inactivo",
+          // ✅ MEJORA: Pasamos los nuevos campos recibidos de la API
+          duracion: data.duracion ?? "",
+          semestre: data.semestre ?? "",
+          modalidad: data.modalidad ?? "",
+          fechaInicio: data.fechaInicio ?? "",
+          fechaFin: data.fechaFin ?? "",
+          instructor: data.instructor ?? "",
         })
 
         // 🔹 Adaptar los docentes
-        // Gracias a que la API ya filtra { where: { deletedAt: null } }, 
-        // aquí solo recibiremos inscripciones vivas.
         const docentesAdaptados: Docente[] = (data.inscripciones || []).map((i: any) => ({
           id: i.usuario.id,
           nombre: `${i.usuario.name ?? ""} ${i.usuario.apellido ?? ""}`.trim(),
@@ -83,6 +88,6 @@ export default function CursoPage() {
 
   if (!curso) return <div className="p-6 text-gray-500">No se encontró el curso.</div>
 
-  // Renderizamos el card con la data blindada
+  // Renderizamos el card con la data completa (incluyendo los campos nuevos)
   return <CursoCard curso={curso} docentes={docentes} />
 }

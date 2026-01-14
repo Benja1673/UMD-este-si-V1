@@ -33,6 +33,24 @@ import { ChevronDown, Filter, Edit, Trash2, Search, Plus, X, Pin as PinIcon, Loa
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch" 
 
+// ✅ FUNCIÓN AUXILIAR PARA FORMATEAR RUT CHILENO
+const formatRut = (rut: string) => {
+  // Eliminar cualquier caracter que no sea número o k/K
+  let value = rut.replace(/[^0-9kK]/g, "");
+  
+  // Limitar a 9 caracteres (8 dígitos + DV)
+  if (value.length > 9) value = value.slice(0, 9);
+
+  if (value.length < 2) return value.toUpperCase();
+
+  // Extraer DV y cuerpo
+  const cuerpo = value.slice(0, -1);
+  const dv = value.slice(-1).toUpperCase();
+
+  // Formatear cuerpo con puntos y añadir guión con DV
+  return cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "-" + dv;
+};
+
 function BreadcrumbNav({ current }: { current: string }) {
   return (
     <div className="text-sm text-gray-600 mb-4">
@@ -87,11 +105,9 @@ export default function Page() {
   const [cabecerasFijadas, setCabecerasFijadas] = useState(false)
   const [paginaActual, setPaginaActual] = useState(1)
   
-  // Estados para diálogos
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   
-  // ✅ NUEVOS ESTADOS PARA LA VENTANA DE ERROR DE RUT REPETIDO
   const [isErrorDialogOpen, setIsErrorDialogOpen] = useState(false)
   const [errorDialogMessage, setErrorDialogMessage] = useState("")
 
@@ -255,7 +271,7 @@ export default function Page() {
       id: user.id,
       nombre: user.nombre,
       apellido: user.apellido,
-      rut: user.rut,
+      rut: formatRut(user.rut), // ✅ Formatear al cargar para edición
       email: user.email,
       telefono: user.telefono || "",
       departamentoId: user.departamentoId || "",
@@ -273,9 +289,15 @@ export default function Page() {
     setIsDeleteDialogOpen(true)
   }
 
+  // ✅ MODIFICADO: Manejador de cambios con formateo de RUT
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
-    setFormData({ ...formData, [name]: value })
+    
+    if (name === "rut") {
+      setFormData({ ...formData, [name]: formatRut(value) })
+    } else {
+      setFormData({ ...formData, [name]: value })
+    }
   }
 
   const handleCrearDepartamento = async () => {
@@ -324,10 +346,8 @@ export default function Page() {
 
       const payloadRes = await res.json().catch(() => ({}))
 
-      // 🛡️ MANEJO DE ERROR 409 (RUT O EMAIL REPETIDO)
       if (!res.ok) {
         if (res.status === 409) {
-          // ✅ ABRIMOS LA VENTANA DE ERROR ESPECÍFICA
           setErrorDialogMessage(payloadRes.error || "Ya existe un docente registrado con este RUT o Email.")
           setIsErrorDialogOpen(true)
           return; 
@@ -538,7 +558,7 @@ export default function Page() {
                 <div className="space-y-1"><Label>Apellido *</Label><Input name="apellido" value={formData.apellido} onChange={handleFormChange} /></div>
              </div>
              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1"><Label>RUT *</Label><Input name="rut" value={formData.rut} onChange={handleFormChange} /></div>
+                <div className="space-y-1"><Label>RUT *</Label><Input name="rut" placeholder="12.345.678-9" value={formData.rut} onChange={handleFormChange} /></div>
                 <div className="space-y-1"><Label>Email *</Label><Input name="email" type="email" value={formData.email} onChange={handleFormChange} /></div>
              </div>
              <div className="space-y-1">
@@ -603,7 +623,6 @@ export default function Page() {
         </DialogContent>
       </Dialog>
 
-      {/* ✅ VENTANA DE ERROR PARA RUT O EMAIL REPETIDO (CON BOTÓN ACEPTAR) */}
       <Dialog open={isErrorDialogOpen} onOpenChange={setIsErrorDialogOpen}>
         <DialogContent className="max-w-[400px] bg-white opacity-100">
           <DialogHeader>

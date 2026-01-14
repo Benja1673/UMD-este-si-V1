@@ -109,7 +109,7 @@ const ForgotPasswordPage = () => {
               {message}
             </div>
             <p className="text-gray-600 mb-4">
-              Revisa tu bandeja de entrada y sigue las instrucciones del correo.
+              Revisa tu bandeja de entrada y sigue las instrucciones del correo. Se paciente, el correo puede demorar.
             </p>
           </div>
         )}

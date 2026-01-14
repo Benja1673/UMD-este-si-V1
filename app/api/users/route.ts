@@ -29,7 +29,7 @@ async function sendTemporaryPasswordEmail(toEmail: string, temporaryPassword: st
     from: process.env.EMAIL_USER,
     to: toEmail,
     subject: "Credenciales de Acceso a la Plataforma UMD",
-    html: `<p>Hola,</p><p>Se ha creado o restablecido tu cuenta. Tu clave temporal es: <strong>${temporaryPassword}</strong></p><p>Te recomendamos cambiarla al iniciar sesión.</p>`,
+    html: `<p>Hola,</p><p>Se ha creado o restablecido tu cuenta. Tu clave temporal es: <strong>${temporaryPassword}</strong></p><p>Te recomendamos cambiarla en el  inicio de sesión, en la seccion de "¿Olvidó su contraseña?".</p>`,
   };
   try { await transporter.sendMail(mailOptions); } catch (error) { console.error("❌ Error envío correo:", error); }
 }

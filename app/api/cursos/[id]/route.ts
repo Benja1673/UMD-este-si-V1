@@ -6,6 +6,9 @@ import { authOptions, isAdminOrSupervisor } from "@/lib/auth";
 // ✅ IMPORTACIÓN DE TU LÓGICA CORREGIDA
 import { actualizarNivelDocente } from "@/lib/nivel-logic";
 
+// ✅ Aumento de timeout de ejecución para entornos Serverless
+export const maxDuration = 60; 
+
 // ✅ GET - Obtener curso específico o todos los cursos (solo no eliminados)
 export async function GET(
   req: Request,
@@ -25,7 +28,7 @@ export async function GET(
           inscripciones: {
             where: { 
               deletedAt: null, // 🛡️ Filtro Soft Delete de la inscripción
-              estado: { not: "NO_INSCRITO" } // ✅ Estándar: Los desinscritos no aparecen en la lista activa
+              estado: { not: "NO_INSCRITO" } 
             },
             include: {
               usuario: {
@@ -52,14 +55,13 @@ export async function GET(
     } else {
       // 🔹 Obtener todos los cursos activos para la lista general
       const cursos = await prisma.curso.findMany({
-        where: { deletedAt: null }, // 🛡️ Filtro Soft Delete del curso
+        where: { deletedAt: null }, 
         include: {
           departamento: true,
           categoria: true,
           _count: { 
             select: { 
               inscripciones: { 
-                // ✅ Solo contamos cupos para estados reales (INSCRITO, APROBADO, REPROBADO)
                 where: { 
                   estado: { in: ["INSCRITO", "APROBADO", "REPROBADO"] },
                   deletedAt: null
@@ -83,7 +85,7 @@ export async function GET(
   }
 }
 
-// ✅ POST - Crear un curso con Auditoría
+// ✅ POST - Crear un curso con Auditoría y Nuevos Campos
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -105,6 +107,12 @@ export async function POST(req: Request) {
       categoriaId,
       departamentoId,
       docentesInscritos = [],
+      // ✅ Nuevos campos
+      duracion,
+      semestre,
+      modalidad,
+      fechaInicio,
+      fechaFin
     } = body;
 
     if (!categoriaId) {
@@ -122,14 +130,19 @@ export async function POST(req: Request) {
         departamentoId: String(departamentoId),
         instructor: instructor ? String(instructor) : undefined,
         categoriaId: String(categoriaId),
+        // ✅ Guardado de nuevos campos
+        duracion: duracion ? Number(duracion) : null,
+        semestre: semestre ? Number(semestre) : null,
+        modalidad: modalidad || null,
+        fechaInicio: fechaInicio ? new Date(fechaInicio) : null,
+        fechaFin: fechaFin ? new Date(fechaFin) : null,
         // 📝 Registro de Auditoría
         createdById: requesterId,
         updatedById: requesterId,
         inscripciones: {
           create: docentesInscritos.map((d: any) => ({
-            userId: d.userId,
-            estado: d.estado || "INSCRITO",
-            nota: d.nota || null,
+            userId: typeof d === 'string' ? d : d.userId,
+            estado: typeof d === 'string' ? "INSCRITO" : (d.estado || "INSCRITO"),
             fechaInscripcion: new Date(),
             createdById: requesterId,
           })),
@@ -144,7 +157,8 @@ export async function POST(req: Request) {
 
     // ✅ SINCRONIZACIÓN DE NIVELES (Para nuevos inscritos)
     for (const d of docentesInscritos) {
-      await actualizarNivelDocente(d.userId).catch(e => console.error("Error nivel:", e));
+      const uId = typeof d === 'string' ? d : d.userId;
+      await actualizarNivelDocente(uId).catch(e => console.error("Error nivel:", e));
     }
 
     return NextResponse.json(nuevoCurso, { status: 201 });
@@ -154,7 +168,7 @@ export async function POST(req: Request) {
   }
 }
 
-// ✅ PUT - Actualizar curso con Auditoría, Sincronización de Estados y Timeout ampliado
+// ✅ PUT - Actualizar curso con Auditoría, Nuevos Campos y Timeout ampliado
 export async function PUT(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -181,32 +195,37 @@ export async function PUT(
       activo, 
       categoriaId,
       departamentoId,
+      instructor,
       docentesInscritos = [],
+      // ✅ Nuevos campos
+      duracion,
+      semestre,
+      modalidad,
+      fechaInicio,
+      fechaFin
     } = body;
 
-    // 🚀 Optimización: Verificaciones iniciales fuera de la transacción para ahorrar tiempo
     const cursoBase = await prisma.curso.findFirst({ where: { id: cursoId, deletedAt: null } });
     if (!cursoBase) return NextResponse.json({ error: "Curso no encontrado" }, { status: 404 });
 
     const inscripcionesActuales = await prisma.inscripcionCurso.findMany({ where: { cursoId } });
 
-    const nuevosUserIds = docentesInscritos.map((d: any) => d.userId);
+    const nuevosUserIds = docentesInscritos.map((d: any) => typeof d === 'string' ? d : d.userId);
     
     const inscripcionesADesactivar = inscripcionesActuales.filter(
       (i) => !nuevosUserIds.includes(i.userId) && i.estado !== "NO_INSCRITO"
     );
     
     const inscripcionesAActualizar = docentesInscritos.filter((d: any) => 
-      inscripcionesActuales.some((i) => i.userId === d.userId)
+      inscripcionesActuales.some((i) => i.userId === (typeof d === 'string' ? d : d.userId))
     );
 
     const inscripcionesNuevas = docentesInscritos.filter((d: any) => 
-      !inscripcionesActuales.some((i) => i.userId === d.userId)
+      !inscripcionesActuales.some((i) => i.userId === (typeof d === 'string' ? d : d.userId))
     );
 
-    // 🛡️ Aumentamos el timeout a 20 segundos (20000ms) para evitar cierres prematuros por carga masiva
     const cursoActualizado = await prisma.$transaction(async (tx) => {
-      // 1️⃣ ✅ ESTÁNDAR: Los docentes removidos pasan a NO_INSCRITO
+      // 1️⃣ Desactivar inscripciones removidas
       for (const ins of inscripcionesADesactivar) {
         await tx.inscripcionCurso.update({
           where: { id: ins.id },
@@ -217,16 +236,16 @@ export async function PUT(
         });
       }
 
-      // 2️⃣ Actualizar existentes o reactivar previos NO_INSCRITO
+      // 2️⃣ Actualizar existentes
       for (const insData of inscripcionesAActualizar) {
-        const existente = inscripcionesActuales.find((i) => i.userId === insData.userId);
+        const uId = typeof insData === 'string' ? insData : insData.userId;
+        const existente = inscripcionesActuales.find((i) => i.userId === uId);
         if (existente) {
           await tx.inscripcionCurso.update({
             where: { id: existente.id },
             data: {
-              estado: insData.estado || "INSCRITO",
-              // Sanitizamos la nota para evitar errores de tipo
-              nota: insData.nota !== undefined ? (insData.nota === "" ? null : Number(insData.nota)) : null,
+              estado: typeof insData === 'string' ? "INSCRITO" : (insData.estado || "INSCRITO"),
+              nota: insData.nota !== undefined ? (insData.nota === "" ? null : Number(insData.nota)) : undefined,
               fechaAprobacion: insData.estado === "APROBADO" ? new Date() : null,
               updatedById: requesterId,
             },
@@ -234,13 +253,14 @@ export async function PUT(
         }
       }
 
-      // 3️⃣ Crear registros para docentes nuevos en este curso
+      // 3️⃣ Crear nuevas
       for (const insData of inscripcionesNuevas) {
+        const uId = typeof insData === 'string' ? insData : insData.userId;
         await tx.inscripcionCurso.create({
           data: {
             cursoId,
-            userId: insData.userId,
-            estado: insData.estado || "INSCRITO",
+            userId: uId,
+            estado: typeof insData === 'string' ? "INSCRITO" : (insData.estado || "INSCRITO"),
             fechaInscripcion: new Date(),
             createdById: requesterId,
             updatedById: requesterId,
@@ -248,7 +268,7 @@ export async function PUT(
         });
       }
 
-      // 4️⃣ Actualizar los datos generales del curso
+      // 4️⃣ Actualizar datos generales del curso incluyendo NUEVOS CAMPOS
       return tx.curso.update({
         where: { id: cursoId },
         data: {
@@ -257,27 +277,32 @@ export async function PUT(
           codigo,
           nivel,
           tipo,
-          activo: activo !== undefined ? activo : undefined,
+          instructor,
+          activo: activo !== undefined ? Boolean(activo) : undefined,
           ano: Number(ano),
           categoriaId,
           departamentoId,
+          // ✅ Nuevos campos
+          duracion: duracion ? Number(duracion) : null,
+          semestre: semestre ? Number(semestre) : null,
+          modalidad: modalidad || null,
+          fechaInicio: fechaInicio ? new Date(fechaInicio) : null,
+          fechaFin: fechaFin ? new Date(fechaFin) : null,
           updatedById: requesterId,
         },
         include: {
           departamento: true,
           categoria: true,
           inscripciones: { 
-            where: { estado: { not: "NO_INSCRITO" } }, // Ocultamos historial simbólico en el retorno
+            where: { estado: { not: "NO_INSCRITO" } },
             include: { usuario: true } 
           },
         },
       });
     }, {
-      timeout: 20000 // ✅ Solución definitiva al error de Interactive Transaction timeout
+      timeout: 20000 
     });
 
-    // ✅ MEJORA: RECALCULAR NIVELES EN LA BD PARA TODOS LOS USUARIOS AFECTADOS
-    // Juntamos IDs de desactivados y actuales para asegurar que todos queden al día
     const idsParaSincronizar = Array.from(new Set([
       ...inscripcionesADesactivar.map(i => i.userId),
       ...nuevosUserIds
@@ -313,7 +338,6 @@ export async function DELETE(
     const resolvedParams = await params;
     const cursoId = resolvedParams.id;
 
-    // 🗑️ Soft Delete: Registramos fecha y autor del borrado
     await prisma.curso.update({
       where: { id: cursoId },
       data: {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { Search, ChevronLeft, ChevronRight, Filter, Trash2, Save, AlertTriangle } from "lucide-react"
+import { Search, ChevronLeft, ChevronRight, Filter, Trash2, Save, Calendar } from "lucide-react"
 import BreadcrumbNav from "@/components/breadcrumb-nav"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/use-toast"
-import { Switch } from "@/components/ui/switch" // ✅ Importante para el estado
+import { Switch } from "@/components/ui/switch"
 
 type Docente = {
   id: string
@@ -77,10 +77,16 @@ export default function EditarCursoPage() {
         setCategorias(cats)
         setDocentesDisponibles(users)
         
-        // ✅ Cargamos los datos del curso incluyendo el campo 'activo'
+        // Mapeo de datos recibidos incluyendo los nuevos campos para el formulario
         setCursoData({
           ...cursoRes,
-          activo: cursoRes.activo ?? true
+          activo: cursoRes.activo ?? true,
+          ano: cursoRes.ano?.toString() || new Date().getFullYear().toString(),
+          duracion: cursoRes.duracion?.toString() || "",
+          semestre: cursoRes.semestre?.toString() || "",
+          modalidad: cursoRes.modalidad || "",
+          fechaInicio: cursoRes.fechaInicio ? new Date(cursoRes.fechaInicio).toISOString().split('T')[0] : "",
+          fechaFin: cursoRes.fechaFin ? new Date(cursoRes.fechaFin).toISOString().split('T')[0] : "",
         })
 
         const inscritos: DocenteInscrito[] = (cursoRes.inscripciones || []).map((i: any) => ({
@@ -129,7 +135,7 @@ export default function EditarCursoPage() {
     if (!confirm("¿Seguro que deseas eliminar este curso? Se aplicará un borrado lógico.")) return
     try {
       const res = await fetch(`/api/cursos?id=${id}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("Error al eliminar")
+      if (!res.ok) throw new Error("No se pudo eliminar")
       toast({ title: "Eliminado", description: "Curso marcado como eliminado correctamente" })
       router.push("/dashboard/gestion-cursos")
     } catch (error) {
@@ -141,6 +147,9 @@ export default function EditarCursoPage() {
     try {
       const payload = {
         ...cursoData,
+        ano: Number(cursoData.ano),
+        duracion: cursoData.duracion ? Number(cursoData.duracion) : null,
+        semestre: cursoData.semestre ? Number(cursoData.semestre) : null,
         docentesInscritos: docentesInscritos.map((d) => ({
           userId: d.id,
           estado: d.estadoInscripcion,
@@ -155,7 +164,7 @@ export default function EditarCursoPage() {
 
       if (!response.ok) throw new Error("Error al actualizar")
 
-      toast({ title: "Éxito", description: "Curso actualizado con auditoría" })
+      toast({ title: "Éxito", description: "Curso actualizado correctamente" })
       router.push("/dashboard/gestion-cursos")
       router.refresh()
     } catch (error: any) {
@@ -179,7 +188,6 @@ export default function EditarCursoPage() {
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-800">Editar Curso</h1>
           
-          {/* ✅ Switch de Estado Activo/Inactivo */}
           <div className="flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-full border">
             <Label htmlFor="estado-curso" className="text-sm font-semibold">Estado del Curso:</Label>
             <Switch 
@@ -208,14 +216,89 @@ export default function EditarCursoPage() {
               <div className="flex flex-col gap-2">
                 <Label>Nivel</Label>
                 <Select value={cursoData.nivel || ""} onValueChange={(v) => setCursoData({ ...cursoData, nivel: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
+                  <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-white z-50">
                     <SelectItem value="Inicial">Inicial</SelectItem>
                     <SelectItem value="Intermedio">Intermedio</SelectItem>
                     <SelectItem value="Avanzado">Avanzado</SelectItem>
+                    <SelectItem value="General">General</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Nuevos campos agregados */}
+              <div className="flex flex-col gap-2">
+                <Label>Tipo</Label>
+                <Select value={cursoData.tipo || ""} onValueChange={(v) => setCursoData({ ...cursoData, tipo: v })}>
+                  <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-white z-50">
+                    <SelectItem value="Teórico">Teórico</SelectItem>
+                    <SelectItem value="Práctico">Práctico</SelectItem>
+                    <SelectItem value="Teórico-Práctico">Teórico-Práctico</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Año</Label>
+                <Input type="number" value={cursoData.ano || ""} onChange={(e) => setCursoData({ ...cursoData, ano: e.target.value })} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Instructor Principal</Label>
+                <Input value={cursoData.instructor || ""} onChange={(e) => setCursoData({ ...cursoData, instructor: e.target.value })} placeholder="Nombre del instructor" />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label>Duración (Horas)</Label>
+                <Input type="number" value={cursoData.duracion || ""} onChange={(e) => setCursoData({ ...cursoData, duracion: e.target.value })} placeholder="Ej: 40" />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Semestre</Label>
+                <Select value={cursoData.semestre || ""} onValueChange={(v) => setCursoData({ ...cursoData, semestre: v })}>
+                  <SelectTrigger className="bg-white"><SelectValue placeholder="Selecciona semestre" /></SelectTrigger>
+                  <SelectContent className="bg-white z-50">
+                    <SelectItem value="1">Semestre 1</SelectItem>
+                    <SelectItem value="2">Semestre 2</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Modalidad</Label>
+                <Select value={cursoData.modalidad || ""} onValueChange={(v) => setCursoData({ ...cursoData, modalidad: v })}>
+                  <SelectTrigger className="bg-white"><SelectValue placeholder="Selecciona modalidad" /></SelectTrigger>
+                  <SelectContent className="bg-white z-50">
+                    <SelectItem value="Online">Online</SelectItem>
+                    <SelectItem value="Presencial">Presencial</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Fecha de Inicio</Label>
+                <Input type="date" value={cursoData.fechaInicio || ""} onChange={(e) => setCursoData({ ...cursoData, fechaInicio: e.target.value })} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Fecha de Finalización</Label>
+                <Input type="date" value={cursoData.fechaFin || ""} onChange={(e) => setCursoData({ ...cursoData, fechaFin: e.target.value })} />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label>Categoría</Label>
+                <Select value={cursoData.categoriaId || ""} onValueChange={(v) => setCursoData({ ...cursoData, categoriaId: v })}>
+                  <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-white z-50">
+                    {categorias.map((cat) => <SelectItem key={cat.id} value={cat.id}>{cat.nombre}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Departamento</Label>
+                <Select value={cursoData.departamentoId || ""} onValueChange={(v) => setCursoData({ ...cursoData, departamentoId: v })}>
+                  <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-white z-50">
+                    {departamentos.map((depto) => <SelectItem key={depto.id} value={depto.id}>{depto.nombre}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="flex flex-col gap-2 md:col-span-2 lg:col-span-3">
                 <Label>Descripción</Label>
                 <Textarea value={cursoData.descripcion || ""} onChange={(e) => setCursoData({ ...cursoData, descripcion: e.target.value })} />
@@ -228,7 +311,6 @@ export default function EditarCursoPage() {
           <CardHeader><CardTitle>Gestión de Docentes</CardTitle></CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-              {/* Lista Inscritos */}
               <div className="lg:col-span-5">
                 <h3 className="font-semibold mb-3">Docentes Inscritos ({docentesInscritos.length})</h3>
                 <div className="border rounded-md h-96 overflow-y-auto">
@@ -247,11 +329,12 @@ export default function EditarCursoPage() {
                           <TableCell className="text-sm">{`${docente.name} ${docente.apellido}`}</TableCell>
                           <TableCell>
                             <Select value={docente.estadoInscripcion} onValueChange={(val) => handleEstadoChange(docente, val)}>
-                              <SelectTrigger className={`h-8 text-xs ${getColor(docente.estadoInscripcion)}`}><SelectValue /></SelectTrigger>
-                              <SelectContent>
+                              <SelectTrigger className={`h-8 text-xs bg-white ${getColor(docente.estadoInscripcion)}`}><SelectValue /></SelectTrigger>
+                              <SelectContent className="bg-white z-50">
                                 <SelectItem value="INSCRITO">Inscrito</SelectItem>
                                 <SelectItem value="APROBADO">Aprobado</SelectItem>
                                 <SelectItem value="REPROBADO">Reprobado</SelectItem>
+                                <SelectItem value="NO_INSCRITO">No Inscrito</SelectItem>
                               </SelectContent>
                             </Select>
                           </TableCell>
@@ -267,12 +350,29 @@ export default function EditarCursoPage() {
                 <Button onClick={desinscribirSeleccionados} disabled={seleccionadosInscritos.length === 0} variant="outline" size="sm" className="w-full">Quitar <ChevronRight className="h-4 w-4" /></Button>
               </div>
 
-              {/* Lista Disponibles */}
               <div className="lg:col-span-5">
                 <h3 className="font-semibold mb-3">Disponibles ({docentesFiltrados.length})</h3>
-                <div className="relative mb-2">
-                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-                  <Input placeholder="Buscar..." className="pl-8 h-9" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+                <div className="flex flex-col gap-2 mb-2">
+                  <div className="relative">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                    <Input placeholder="Buscar..." className="pl-8 h-9 bg-white" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+                  </div>
+                  <div className="flex gap-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="flex-1 bg-white">Depto.</Button></DropdownMenuTrigger>
+                      <DropdownMenuContent className="bg-white z-50">
+                        <DropdownMenuItem onClick={() => setFiltroDepartamento("todos")}>Todos</DropdownMenuItem>
+                        {departamentosDocentes.map((depto) => <DropdownMenuItem key={depto} onClick={() => setFiltroDepartamento(depto)}>{depto}</DropdownMenuItem>)}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="flex-1 bg-white">Especialidad</Button></DropdownMenuTrigger>
+                      <DropdownMenuContent className="bg-white z-50">
+                        <DropdownMenuItem onClick={() => setFiltroEspecialidad("todos")}>Todas</DropdownMenuItem>
+                        {especialidades.map((esp) => <DropdownMenuItem key={esp} onClick={() => setFiltroEspecialidad(esp)}>{esp}</DropdownMenuItem>)}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
                 <div className="border rounded-md h-80 overflow-y-auto">
                   <Table>

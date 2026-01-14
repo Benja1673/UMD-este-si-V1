@@ -16,6 +16,13 @@ export type Curso = {
   ano: number
   departamento: string
   estado: string
+  // ✅ Nuevos campos agregados
+  duracion?: number | string
+  semestre?: number | string
+  modalidad?: string
+  fechaInicio?: string
+  fechaFin?: string
+  instructor?: string
 }
 
 export type Docente = {
@@ -24,7 +31,7 @@ export type Docente = {
   rut: string
   email: string
   departamento: string
-  estadoInscripcion?: string // 👈 nuevo campo
+  estadoInscripcion?: string
 }
 
 interface CursoCardProps {
@@ -35,7 +42,21 @@ interface CursoCardProps {
 export default function CursoCard({ curso, docentes }: CursoCardProps) {
   const [cursoState] = useState<Curso>(curso)
 
-  // 🎨 Nuevo: función para definir color según estado
+  // Función para formatear fechas de ISO a algo legible
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return "No definida"
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString('es-CL', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      })
+    } catch {
+      return dateString
+    }
+  }
+
   const getColor = (estado: string) => {
     switch (estado?.toUpperCase()) {
       case "APROBADO":
@@ -65,15 +86,16 @@ export default function CursoCard({ curso, docentes }: CursoCardProps) {
           </div>
         </div>
 
-        {/* Lado derecho */}
+        {/* Lado derecho - Información Detallada */}
         <div className="w-full md:w-2/3">
           <div className="bg-gray-100 rounded-lg p-6">
-            <h3 className="text-lg font-medium mb-4">Información del Curso</h3>
+            <h3 className="text-lg font-medium mb-4 border-b pb-2">Información del Curso</h3>
             <div className="space-y-4">
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-500">Código</label>
-                  <p>{cursoState.codigo}</p>
+                  <p className="font-semibold">{cursoState.codigo}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-500">Nivel</label>
@@ -83,35 +105,71 @@ export default function CursoCard({ curso, docentes }: CursoCardProps) {
 
               <div>
                 <label className="block text-sm font-medium text-gray-500">Descripción</label>
-                <p>{cursoState.descripcion}</p>
+                <p className="text-sm">{cursoState.descripcion}</p>
               </div>
 
+              {/* ✅ Fila de Instructor e Información Académica */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">Instructor Principal</label>
+                  <p>{cursoState.instructor || "No asignado"}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">Tipo de Curso</label>
+                  <p>{cursoState.tipo}</p>
+                </div>
+              </div>
+
+              {/* ✅ Fila de Duración, Semestre y Modalidad */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">Duración</label>
+                  <p>{cursoState.duracion ? `${cursoState.duracion} horas` : "N/A"}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">Semestre</label>
+                  <p>{cursoState.semestre || "N/A"}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">Modalidad</label>
+                  <p>{cursoState.modalidad || "N/A"}</p>
+                </div>
+              </div>
+
+              {/* ✅ Fila de Fechas */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">Fecha de Inicio</label>
+                  <p>{formatDate(cursoState.fechaInicio)}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">Fecha de Término</label>
+                  <p>{formatDate(cursoState.fechaFin)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-500">Cupos</label>
                   <p>{cursoState.cupos}</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-500">Tipo</label>
-                  <p>{cursoState.tipo}</p>
+                  <label className="block text-sm font-medium text-gray-500">Año Académico</label>
+                  <p>{cursoState.ano}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-500">Año</label>
-                  <p>{cursoState.ano}</p>
-                </div>
-                <div>
                   <label className="block text-sm font-medium text-gray-500">Departamento</label>
                   <p>{cursoState.departamento}</p>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">Estado</label>
+                  <p className="font-bold">{cursoState.estado}</p>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Estado</label>
-                <p>{cursoState.estado}</p>
-              </div>
             </div>
           </div>
         </div>
@@ -136,14 +194,14 @@ export default function CursoCard({ curso, docentes }: CursoCardProps) {
           <TableBody>
             {docentes.map((docente) => (
               <TableRow key={docente.id}>
-                <TableCell>{docente.nombre}</TableCell>
+                <TableCell className="font-medium">{docente.nombre}</TableCell>
                 <TableCell>{docente.rut}</TableCell>
                 <TableCell>{docente.email}</TableCell>
                 <TableCell>{docente.departamento}</TableCell>
 
                 <TableCell>
                   <span
-                    className={`px-3 py-1 rounded-full text-sm font-medium ${getColor(
+                    className={`px-3 py-1 rounded-full text-xs font-bold ${getColor(
                       docente.estadoInscripcion ?? ""
                     )}`}
                   >
@@ -154,13 +212,20 @@ export default function CursoCard({ curso, docentes }: CursoCardProps) {
                 <TableCell>
                   <Link
                     href={`/dashboard/perfil-docente/${docente.id}`}
-                    className="text-blue-600 hover:underline"
+                    className="text-blue-600 hover:underline font-medium text-sm"
                   >
                     Ver Perfil
                   </Link>
                 </TableCell>
               </TableRow>
             ))}
+            {docentes.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                  No hay docentes inscritos en este curso.
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </div>

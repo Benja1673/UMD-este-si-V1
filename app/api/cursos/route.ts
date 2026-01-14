@@ -11,10 +11,9 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
-    const estado = searchParams.get("estado"); // 'activos', 'inactivos', 'todos'
+    const estado = searchParams.get("estado");
 
     if (id) {
-      // 🔹 Caso 1: Obtener un curso específico (que no esté eliminado)
       const curso = await prisma.curso.findFirst({
         where: { id, deletedAt: null },
         include: {
@@ -45,20 +44,15 @@ export async function GET(req: Request) {
 
       return NextResponse.json(curso);
     } else {
-      // 🔹 Caso 2: Obtener lista de cursos
       let whereClause: any = { deletedAt: null };
 
       if (estado === "activos") {
         whereClause.activo = true;
       } else if (estado === "inactivos") {
         whereClause.activo = false;
-      } else if (estado === "todos") {
-        // No añadimos filtro 'activo'
-      } else {
+      } else if (estado !== "todos") {
         whereClause.activo = true;
       }
-
-      console.log("🔍 Aplicando filtro de búsqueda:", whereClause);
 
       const cursos = await prisma.curso.findMany({
         where: whereClause,
@@ -87,7 +81,7 @@ export async function GET(req: Request) {
   }
 }
 
-// ✅ POST - Crear un curso con auditoría y Timeout aumentado
+// ✅ POST - Crear un curso con auditoría y Nuevos Campos
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -109,32 +103,45 @@ export async function POST(req: Request) {
       categoriaId,
       departamentoId,
       docentesInscritos = [],
-      activo = true
+      activo = true,
+      // 🆕 Nuevos campos recibidos del front
+      duracion,
+      semestre,
+      modalidad,
+      fechaInicio,
+      fechaFin
     } = body;
 
     if (!categoriaId) {
       return NextResponse.json({ error: "categoriaId es obligatorio" }, { status: 400 });
     }
 
-    // Uso de transacción con timeout aumentado para manejar inscripciones masivas
     const nuevoCurso = await prisma.$transaction(async (tx) => {
       return await tx.curso.create({
         data: {
           nombre,
           descripcion: descripcion || "",
           codigo,
-          nivel: nivel || "",
-          tipo: tipo || "",
+          nivel: nivel || "General",
+          tipo: tipo || "Curso",
           ano: Number(ano),
           departamentoId: String(departamentoId),
           instructor: instructor ? String(instructor) : undefined,
           categoriaId: String(categoriaId),
           activo: Boolean(activo),
+          // 🆕 Guardado de nuevos campos
+          duracion: duracion ? Number(duracion) : null,
+          semestre: semestre ? Number(semestre) : null,
+          modalidad: modalidad || null,
+          fechaInicio: fechaInicio ? new Date(fechaInicio) : null,
+          fechaFin: fechaFin ? new Date(fechaFin) : null,
           createdById: requesterId,
           updatedById: requesterId,
           inscripciones: {
-            create: docentesInscritos.map((userId: string) => ({ 
-              userId, 
+            // ✅ CORRECCIÓN: Accedemos a .userId porque ahora viene como objeto
+            create: docentesInscritos.map((d: any) => ({ 
+              userId: typeof d === 'string' ? d : d.userId, 
+              estado: typeof d === 'string' ? "INSCRITO" : (d.estado || "INSCRITO"),
               createdById: requesterId 
             })),
           },
@@ -145,7 +152,7 @@ export async function POST(req: Request) {
         },
       });
     }, {
-      timeout: 20000 // 20 segundos para la operación de base de datos
+      timeout: 20000 
     });
 
     return NextResponse.json(nuevoCurso, { status: 201 });
@@ -155,7 +162,7 @@ export async function POST(req: Request) {
   }
 }
 
-// ✅ PUT - Actualizar curso con auditoría y Timeout aumentado
+// ✅ PUT - Actualizar curso con Nuevos Campos
 export async function PUT(req: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -184,11 +191,15 @@ export async function PUT(req: Request) {
       categoriaId,
       departamentoId,
       docentesInscritos = [],
+      // 🆕 Nuevos campos
+      duracion,
+      semestre,
+      modalidad,
+      fechaInicio,
+      fechaFin
     } = body;
 
-    // Se envuelve todo el proceso en una transacción con timeout de 20s
     const cursoFinal = await prisma.$transaction(async (tx) => {
-      // 1. Actualizar datos base
       await tx.curso.update({
         where: { id },
         data: {
@@ -201,11 +212,16 @@ export async function PUT(req: Request) {
           ano: Number(ano),
           categoriaId,
           departamentoId,
+          // 🆕 Actualización de nuevos campos
+          duracion: duracion ? Number(duracion) : null,
+          semestre: semestre ? Number(semestre) : null,
+          modalidad: modalidad || null,
+          fechaInicio: fechaInicio ? new Date(fechaInicio) : null,
+          fechaFin: fechaFin ? new Date(fechaFin) : null,
           updatedById: requesterId,
         },
       });
 
-      // 2. Gestionar inscripciones (Soft Delete)
       const inscripcionesActuales = await tx.inscripcionCurso.findMany({
         where: { cursoId: id, deletedAt: null },
       });
@@ -222,7 +238,6 @@ export async function PUT(req: Request) {
         });
       }
 
-      // 3. Crear nuevas o actualizar existentes (Bucle que requiere más tiempo)
       for (const d of docentesInscritos) {
         const userId = typeof d === 'string' ? d : d.userId;
         const estadoInsc = typeof d === 'string' ? "INSCRITO" : (d.estado || "INSCRITO");
@@ -243,7 +258,6 @@ export async function PUT(req: Request) {
         });
       }
 
-      // 4. Obtener resultado final para retornar
       return await tx.curso.findUnique({
         where: { id },
         include: {
@@ -256,7 +270,7 @@ export async function PUT(req: Request) {
         },
       });
     }, {
-      timeout: 20000 // Solución al error de Interactive Transaction timeout
+      timeout: 20000 
     });
 
     return NextResponse.json(cursoFinal);
@@ -266,7 +280,7 @@ export async function PUT(req: Request) {
   }
 }
 
-// ✅ DELETE - Borrado Lógico con Transacción y Timeout
+// ✅ DELETE - Borrado Lógico
 export async function DELETE(req: Request) {
   try {
     const session = await getServerSession(authOptions);
