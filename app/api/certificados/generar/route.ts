@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import nodemailer from "nodemailer"; // ✅ Importamos nodemailer
+import nodemailer from "nodemailer";
 
 // ✅ Aumento de timeout de ejecución para entornos Serverless (Vercel)
 export const maxDuration = 60; 
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "certificadoId es requerido" }, { status: 400 });
     }
 
-    // 1. Obtener datos del usuario incluyendo el email para el cuerpo del correo
+    // 1. Obtener datos del usuario
     const usuario = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: { name: true, apellido: true, rut: true, email: true }
@@ -30,21 +30,34 @@ export async function POST(req: Request) {
 
     if (!usuario) return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
 
+    // 2. Obtener el certificado (servicio)
     const certificado = await prisma.certificado.findUnique({
       where: { id: certificadoId }
     });
 
     if (!certificado) return NextResponse.json({ error: "Certificado no encontrado" }, { status: 404 });
 
-    const curso = await prisma.curso.findFirst({
-      where: { nombre: { contains: certificado.titulo } },
-      include: { departamento: true }
+    // 3. NUEVO FLUJO: Obtener el curso vinculado mediante la tabla CondicionServicio
+    // Buscamos la condición que vincula este servicio de tipo CERTIFICADO con un curso
+    const condicion = await prisma.condicionServicio.findFirst({
+      where: {
+        servicioId: certificadoId,
+        servicioTipo: "CERTIFICADO",
+        deletedAt: null
+      },
+      include: {
+        curso: true // Traemos todos los datos del curso (incluyendo los nuevos campos)
+      }
     });
 
-    // 2. Variables para el documento y correo
+    const curso = condicion?.curso;
+
+    // 4. Variables para el documento y correo (Priorizando datos del curso sobre el título del certificado)
     const nombreCompleto = `${usuario.name || ''} ${usuario.apellido || ''}`.trim();
     const rut = usuario.rut || 'Sin RUT';
     const emailSolicitante = usuario.email || 'Sin correo';
+    
+    // Si no hay curso vinculado por error, usamos los datos del certificado por seguridad
     const nombreCurso = curso?.nombre || certificado.titulo;
     const semestre = curso?.semestre || 1;
     const anio = curso?.ano || new Date().getFullYear();
@@ -57,7 +70,7 @@ export async function POST(req: Request) {
     const mes = meses[fechaActual.getMonth()];
     const anioEmision = fechaActual.getFullYear();
 
-    // 3. HTML del Certificado (Mantenemos tu diseño)
+    // 5. HTML del Certificado
     const html = `
 <!DOCTYPE html>
 <html lang="es">
@@ -113,7 +126,7 @@ export async function POST(req: Request) {
 </html>
     `;
 
-    // 4. LÓGICA DEL NAVEGADOR PARA GENERAR EL BUFFER DEL PDF
+    // 6. LÓGICA DEL NAVEGADOR PARA GENERAR EL BUFFER DEL PDF
     let browser;
     const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
@@ -146,7 +159,7 @@ export async function POST(req: Request) {
 
     await browser.close();
 
-    // 5. ENVÍO DE CORREO A UMD
+    // 7. ENVÍO DE CORREO A UMD
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
@@ -157,7 +170,7 @@ export async function POST(req: Request) {
 
     const mailOptions = {
       from: process.env.EMAIL_USER,
-      to: "proyectoumd@gmail.com", // ✅ Correo destino UMD
+      to: "proyectoumd@gmail.com",
       subject: `Solicitud de Firma de Certificado: ${nombreCompleto}`,
       text: `${nombreCompleto}, rut ${rut}, con correo ${emailSolicitante}, ha solicitado este certificado de ${nombreCurso}. Está pendiente a firma.`,
       attachments: [
@@ -171,10 +184,10 @@ export async function POST(req: Request) {
 
     await transporter.sendMail(mailOptions);
 
-    // 6. RESPUESTA EXITOSA (Sin descargar el archivo)
+    // 8. RESPUESTA EXITOSA
     return NextResponse.json({ 
       success: true, 
-      message: "Certificado solicitado. El documento generado se ha enviado a UMD para gestionar la firma. Queda pendiente su entrega." 
+      message: "Certificado solicitado correctamente." 
     });
 
   } catch (error: any) {

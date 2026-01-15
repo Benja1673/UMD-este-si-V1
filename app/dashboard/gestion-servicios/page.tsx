@@ -106,7 +106,6 @@ export default function GestionServicios() {
           )
           if (condRes.ok) {
             const conds = await condRes.json()
-            // 🔧 Extraer el nombre del curso desde la relación
             const condsConNombre = conds.map((cond: any) => ({
               ...cond,
               cursoNombre: cond.curso?.nombre || "Curso",
@@ -154,9 +153,14 @@ export default function GestionServicios() {
       cursoNombre: cursos.find(curso => curso.id === c.cursoId)?.nombre
     })))
     
-    setEsDisponibleParaTodos(
-      condsExistentes.length === 0 || condsExistentes.some(c => c.esGeneral)
-    )
+    // Si es certificado, nunca es disponible para todos por defecto
+    if (activeTab === "certificados") {
+        setEsDisponibleParaTodos(false);
+    } else {
+        setEsDisponibleParaTodos(
+            condsExistentes.length === 0 || condsExistentes.some(c => c.esGeneral)
+        )
+    }
     
     setNuevaCondicion({ cursoId: "", estadoRequerido: "" })
     setIsDialogOpen(true)
@@ -165,6 +169,23 @@ export default function GestionServicios() {
   const handleEliminarDialog = (item: Servicio) => {
     setItemActual(item)
     setIsDeleteDialogOpen(true)
+  }
+
+  // Lógica específica para certificados: Solo un curso, siempre aprobado
+  const handleCursoCertificadoChange = (cursoId: string) => {
+    if (!cursoId) {
+        setCondiciones([]);
+        return;
+    }
+    const curso = cursos.find(c => c.id === cursoId);
+    setCondiciones([
+        {
+            cursoId: cursoId,
+            cursoNombre: curso?.nombre,
+            estadoRequerido: "APROBADO",
+            esGeneral: false
+        }
+    ]);
   }
 
   const agregarCondicion = () => {
@@ -198,9 +219,13 @@ export default function GestionServicios() {
       return
     }
 
+    if (activeTab === "certificados" && condiciones.length === 0) {
+      showToast("Debe seleccionar el curso al que pertenece este certificado", 'error')
+      return
+    }
+
     setLoading(true)
     try {
-      // 1️⃣ Crear/Actualizar el servicio primero
       const method = itemActual ? "PUT" : "POST"
       const body: any = { titulo: formData.titulo.trim() }
 
@@ -229,11 +254,7 @@ export default function GestionServicios() {
       const servicioGuardado = await resServicio.json()
       const servicioId = servicioGuardado.id
 
-      if (!servicioId) {
-        throw new Error("No se recibió el ID del servicio")
-      }
-
-      // 2️⃣ Eliminar condiciones anteriores (solo si está editando)
+      // 2️⃣ Eliminar condiciones anteriores
       if (itemActual?.condiciones) {
         for (const cond of itemActual.condiciones) {
           if (cond.id) {
@@ -245,9 +266,8 @@ export default function GestionServicios() {
       }
 
       // 3️⃣ Crear nuevas condiciones
-      if (esDisponibleParaTodos) {
-        // Condición general
-        const resCondicion = await fetch("/api/condiciones-servicios", {
+      if (esDisponibleParaTodos && activeTab !== "certificados") {
+        await fetch("/api/condiciones-servicios", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -256,15 +276,9 @@ export default function GestionServicios() {
             esGeneral: true
           })
         })
-
-        if (!resCondicion.ok) {
-          const error = await resCondicion.json()
-          console.error("Error creando condición general:", error)
-        }
       } else if (condiciones.length > 0) {
-        // Condiciones específicas
         for (const cond of condiciones) {
-          const resCondicion = await fetch("/api/condiciones-servicios", {
+          await fetch("/api/condiciones-servicios", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -275,11 +289,6 @@ export default function GestionServicios() {
               esGeneral: false
             })
           })
-
-          if (!resCondicion.ok) {
-            const error = await resCondicion.json()
-            console.error("Error creando condición:", error)
-          }
         }
       }
 
@@ -494,7 +503,7 @@ export default function GestionServicios() {
                     type="text"
                     value={formData.titulo}
                     onChange={(e) => setFormData({ ...formData, titulo: e.target.value })}
-                    placeholder="Nombre del servicio"
+                    placeholder="Nombre del servicio (se mostrará en la lista del usuario)"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -505,7 +514,7 @@ export default function GestionServicios() {
                     <textarea
                       value={formData.descripcion}
                       onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
-                      placeholder="Descripción del servicio"
+                      placeholder="Breve descripción del servicio"
                       rows={3}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
@@ -542,102 +551,131 @@ export default function GestionServicios() {
               <div className="space-y-4 border-t border-gray-200 pt-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="font-semibold text-sm text-gray-700">Condiciones de Disponibilidad</h3>
+                    <h3 className="font-semibold text-sm text-gray-700">
+                      {activeTab === "certificados" ? "Curso Certificado" : "Condiciones de Disponibilidad"}
+                    </h3>
                     <p className="text-xs text-gray-500 mt-1">
-                      Define quiénes pueden ver este servicio
+                      {activeTab === "certificados" 
+                        ? "Seleccione el curso al cual pertenece este certificado." 
+                        : "Define quiénes pueden ver este servicio"}
                     </p>
                   </div>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={esDisponibleParaTodos}
-                      onChange={(e) => setEsDisponibleParaTodos(e.target.checked)}
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700">Disponible para todos</span>
-                  </label>
+                  {activeTab !== "certificados" && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                        type="checkbox"
+                        checked={esDisponibleParaTodos}
+                        onChange={(e) => setEsDisponibleParaTodos(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">Disponible para todos</span>
+                    </label>
+                  )}
                 </div>
 
-                {!esDisponibleParaTodos && (
-                  <>
-                    <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Curso</label>
-                        <select
-                          value={nuevaCondicion.cursoId}
-                          onChange={(e) => setNuevaCondicion({ ...nuevaCondicion, cursoId: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        >
-                          <option value="">Seleccionar curso</option>
-                          {cursos.map(curso => (
-                            <option key={curso.id} value={curso.id}>
-                              {curso.nombre}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Estado requerido</label>
-                        <select
-                          value={nuevaCondicion.estadoRequerido}
-                          onChange={(e) => setNuevaCondicion({ ...nuevaCondicion, estadoRequerido: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        >
-                          <option value="">Seleccionar estado</option>
-                          {ESTADOS_CURSO.map(estado => (
-                            <option key={estado} value={estado}>
-                              {estado.replace('_', ' ')}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="flex items-end">
-                        <button
-                          type="button"
-                          onClick={agregarCondicion}
-                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {condiciones.length > 0 && (
-                      <div className="space-y-2">
-                        <label className="block text-xs font-medium text-gray-600">
-                          Condiciones agregadas ({condiciones.length})
-                        </label>
-                        <div className="space-y-2 max-h-40 overflow-y-auto">
-                          {condiciones.map((cond, idx) => (
-                            <div
-                              key={idx}
-                              className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-200"
-                            >
-                              <div className="flex-1 text-sm">
-                                <span className="font-medium text-gray-900">{cond.cursoNombre}</span>
-                                <span className="text-gray-400 mx-2">→</span>
-                                <span className="text-blue-600 font-medium">
-                                  {cond.estadoRequerido?.replace('_', ' ')}
-                                </span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => eliminarCondicion(idx)}
-                                className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            </div>
-                          ))}
+                {activeTab === "certificados" ? (
+                  // ✅ MODO CERTIFICADOS: Selector único de curso
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                    <label className="block text-xs font-medium text-blue-700 mb-2">Seleccionar Curso Asociado *</label>
+                    <select
+                      value={condiciones[0]?.cursoId || ""}
+                      onChange={(e) => handleCursoCertificadoChange(e.target.value)}
+                      className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+                    >
+                      <option value="">-- Seleccionar curso --</option>
+                      {cursos.map(curso => (
+                        <option key={curso.id} value={curso.id}>
+                          {curso.nombre}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] text-blue-600 mt-2 italic">
+                      Nota: El certificado solo estará disponible para los docentes con estado "APROBADO" en el curso seleccionado. El nombre del curso aparecerá impreso en el documento generado.
+                    </p>
+                  </div>
+                ) : (
+                  // MODO NORMAL (Sistemas, Capacitaciones, Eval)
+                  !esDisponibleParaTodos && (
+                    <>
+                      <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Curso</label>
+                          <select
+                            value={nuevaCondicion.cursoId}
+                            onChange={(e) => setNuevaCondicion({ ...nuevaCondicion, cursoId: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          >
+                            <option value="">Seleccionar curso</option>
+                            {cursos.map(curso => (
+                              <option key={curso.id} value={curso.id}>
+                                {curso.nombre}
+                              </option>
+                            ))}
+                          </select>
                         </div>
-                        <p className="text-xs text-gray-500 italic bg-blue-50 p-2 rounded">
-                          💡 El servicio estará disponible para usuarios que cumplan AL MENOS UNA de estas condiciones
-                        </p>
+
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Estado requerido</label>
+                          <select
+                            value={nuevaCondicion.estadoRequerido}
+                            onChange={(e) => setNuevaCondicion({ ...nuevaCondicion, estadoRequerido: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          >
+                            <option value="">Seleccionar estado</option>
+                            {ESTADOS_CURSO.map(estado => (
+                              <option key={estado} value={estado}>
+                                {estado.replace('_', ' ')}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex items-end">
+                          <button
+                            type="button"
+                            onClick={agregarCondicion}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
-                    )}
-                  </>
+
+                      {condiciones.length > 0 && (
+                        <div className="space-y-2">
+                          <label className="block text-xs font-medium text-gray-600">
+                            Condiciones agregadas ({condiciones.length})
+                          </label>
+                          <div className="space-y-2 max-h-40 overflow-y-auto">
+                            {condiciones.map((cond, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-200"
+                              >
+                                <div className="flex-1 text-sm">
+                                  <span className="font-medium text-gray-900">{cond.cursoNombre}</span>
+                                  <span className="text-gray-400 mx-2">→</span>
+                                  <span className="text-blue-600 font-medium">
+                                    {cond.estadoRequerido?.replace('_', ' ')}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => eliminarCondicion(idx)}
+                                  className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs text-gray-500 italic bg-blue-50 p-2 rounded">
+                            💡 El servicio estará disponible para usuarios que cumplan AL MENOS UNA de estas condiciones
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )
                 )}
               </div>
             </div>

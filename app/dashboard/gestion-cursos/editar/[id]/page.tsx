@@ -77,7 +77,6 @@ export default function EditarCursoPage() {
         setCategorias(cats)
         setDocentesDisponibles(users)
         
-        // Mapeo de datos recibidos incluyendo los nuevos campos para el formulario
         setCursoData({
           ...cursoRes,
           activo: cursoRes.activo ?? true,
@@ -135,7 +134,7 @@ export default function EditarCursoPage() {
     if (!confirm("¿Seguro que deseas eliminar este curso? Se aplicará un borrado lógico.")) return
     try {
       const res = await fetch(`/api/cursos?id=${id}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("No se pudo eliminar")
+      if (!res.ok) throw new Error("Error al eliminar")
       toast({ title: "Eliminado", description: "Curso marcado como eliminado correctamente" })
       router.push("/dashboard/gestion-cursos")
     } catch (error) {
@@ -226,7 +225,6 @@ export default function EditarCursoPage() {
                 </Select>
               </div>
 
-              {/* Nuevos campos agregados */}
               <div className="flex flex-col gap-2">
                 <Label>Tipo</Label>
                 <Select value={cursoData.tipo || ""} onValueChange={(v) => setCursoData({ ...cursoData, tipo: v })}>
@@ -334,7 +332,7 @@ export default function EditarCursoPage() {
                                 <SelectItem value="INSCRITO">Inscrito</SelectItem>
                                 <SelectItem value="APROBADO">Aprobado</SelectItem>
                                 <SelectItem value="REPROBADO">Reprobado</SelectItem>
-                                <SelectItem value="NO_INSCRITO">No Inscrito</SelectItem>
+                                {/* ✅ "NO_INSCRITO" eliminado de aquí para evitar confusión */}
                               </SelectContent>
                             </Select>
                           </TableCell>

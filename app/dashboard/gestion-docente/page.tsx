@@ -457,7 +457,7 @@ export default function Page() {
                 <TableHead className="text-center border border-gray-300 text-[10px] bg-white">DIDÁCTICA</TableHead>
               </TableRow>
               <TableRow>
-                {["Mod.", "Gén.", "Incl.", "Act.", "Eval.", "Plan.", "DEDU", "DIDU", "Conc.", "A+S", "STEM", "COIL", "Didác."].map(h => (
+                {["Modelo edu.", "Perspectiva de Género", "Neurodiversidad e Inclusion", "Metodologias Activas", "Evaluacion.", "Planificacion de la enseñ.", "DEDU", "DIDU", "Concursos, Investifacion y/o Innovación", "A+S", "STEM", "COIL", "Didáctica."].map(h => (
                   <TableHead key={h} className="text-center border border-gray-300 text-[9px] p-1 bg-white">{h}</TableHead>
                 ))}
               </TableRow>
