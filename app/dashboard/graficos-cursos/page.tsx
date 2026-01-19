@@ -19,9 +19,10 @@ type EstadisticasCurso = {
 type Curso = {
   id: string
   nombre: string
-  departamentoId: string
+  departamentoId: string // Depto del curso (original)
   departamentoNombre?: string
-  estadisticas: EstadisticasCurso
+  // ✅ Almacenamos estadísticas desglosadas por departamento del docente participante
+  statsPorDeptoDocente: Record<string, EstadisticasCurso>
 }
 
 type Departamento = {
@@ -40,7 +41,7 @@ export default function GraficosCursos() {
   const [cursosSeleccionados, setCursosSeleccionados] = useState<string[]>([])
   const [departamentosSeleccionados, setDepartamentosSeleccionados] = useState<string[]>([])
   
-  // Estadísticas calculadas
+  // Estadísticas calculadas finales
   const [estadisticasCurso, setEstadisticasCurso] = useState<EstadisticasCurso>({
     aprobados: 0,
     noAprobados: 0,
@@ -57,79 +58,66 @@ export default function GraficosCursos() {
     setError(null)
     
     try {
-      // Cargar cursos
       const resCursos = await fetch('/api/cursos')
       if (!resCursos.ok) throw new Error('Error al cargar cursos')
       const dataCursos = await resCursos.json()
 
-      // Cargar departamentos
       const resDepartamentos = await fetch('/api/departamentos')
       if (!resDepartamentos.ok) throw new Error('Error al cargar departamentos')
       const dataDepartamentos = await resDepartamentos.json()
 
-      setDepartamentos(dataDepartamentos)
+      // ✅ Agregamos manualmente "Sin departamento" a la lista de opciones
+      setDepartamentos([...dataDepartamentos, { id: 'sin-departamento', nombre: 'Sin Departamento' }])
 
-      // Cargar inscripciones para cada curso
-      const cursosConEstadisticas = await Promise.all(
+      // Cargar inscripciones para cada curso y procesar depto de docentes
+      const cursosProcesados = await Promise.all(
         dataCursos.map(async (curso: any) => {
           try {
             const resInscripciones = await fetch(`/api/inscripciones?cursoId=${curso.id}`)
             
+            const statsPorDeptoDocente: Record<string, EstadisticasCurso> = {}
+
             if (resInscripciones.ok) {
               const inscripciones = await resInscripciones.json()
               
-              // Contar estados
-              const aprobados = inscripciones.filter((i: any) => i.estado === 'APROBADO').length
-              const reprobados = inscripciones.filter((i: any) => i.estado === 'REPROBADO').length
-              const inscritos = inscripciones.filter((i: any) => 
-                i.estado === 'INSCRITO' || i.estado === 'EN_PROGRESO'
-              ).length
-
-              // Obtener nombre del departamento
-              const depto = dataDepartamentos.find((d: any) => d.id === curso.departamentoId)
-
-              return {
-                id: curso.id,
-                nombre: curso.nombre,
-                departamentoId: curso.departamentoId,
-                departamentoNombre: depto?.nombre || 'Sin departamento',
-                estadisticas: {
-                  aprobados,
-                  noAprobados: reprobados,
-                  noInscritos: inscritos,
+              inscripciones.forEach((i: any) => {
+                // ✅ Tomamos el depto del DOCENTE (usuario)
+                const deptoIdDocente = i.usuario?.departamentoId || 'sin-departamento'
+                
+                if (!statsPorDeptoDocente[deptoIdDocente]) {
+                  statsPorDeptoDocente[deptoIdDocente] = { aprobados: 0, noAprobados: 0, noInscritos: 0 }
                 }
-              }
+
+                if (i.estado === 'APROBADO') {
+                  statsPorDeptoDocente[deptoIdDocente].aprobados++
+                } else if (i.estado === 'REPROBADO') {
+                  statsPorDeptoDocente[deptoIdDocente].noAprobados++
+                } else {
+                  statsPorDeptoDocente[deptoIdDocente].noInscritos++
+                }
+              })
             }
+
+            // Info del depto del curso solo para etiquetas
+            const deptoDelCurso = dataDepartamentos.find((d: any) => d.id === curso.departamentoId)
 
             return {
               id: curso.id,
               nombre: curso.nombre,
               departamentoId: curso.departamentoId,
-              departamentoNombre: dataDepartamentos.find((d: any) => d.id === curso.departamentoId)?.nombre || 'Sin departamento',
-              estadisticas: {
-                aprobados: 0,
-                noAprobados: 0,
-                noInscritos: 0,
-              }
+              departamentoNombre: deptoDelCurso?.nombre || 'Sin departamento',
+              statsPorDeptoDocente
             }
           } catch (err) {
-            console.error(`Error cargando inscripciones para ${curso.nombre}:`, err)
             return {
-              id: curso.id,
-              nombre: curso.nombre,
-              departamentoId: curso.departamentoId,
-              departamentoNombre: 'Sin departamento',
-              estadisticas: {
-                aprobados: 0,
-                noAprobados: 0,
-                noInscritos: 0,
-              }
+              id: curso.id, nombre: curso.nombre, departamentoId: curso.departamentoId,
+              statsPorDeptoDocente: {}
             }
           }
         })
       )
 
-      setCursos(cursosConEstadisticas)
+      setCursos(cursosProcesados)
     } catch (err: any) {
       console.error('Error cargando datos:', err)
       setError(err.message)
@@ -138,30 +126,33 @@ export default function GraficosCursos() {
     }
   }
 
-  // Calcular estadísticas según filtros
+  // ✅ Calcular estadísticas consolidadas basadas en el Depto del Docente
   useEffect(() => {
     let cursosFiltrados = [...cursos]
 
-    // Filtrar por departamento
-    if (departamentosSeleccionados.length > 0) {
-      cursosFiltrados = cursosFiltrados.filter((curso) => 
-        departamentosSeleccionados.includes(curso.departamentoId)
-      )
-    }
-
-    // Filtrar por cursos específicos
+    // 1. Si hay cursos específicos seleccionados, filtramos la lista
     if (cursosSeleccionados.length > 0) {
       cursosFiltrados = cursosFiltrados.filter((curso) => 
         cursosSeleccionados.includes(curso.id)
       )
     }
 
-    // Calcular totales
+    // 2. Sumamos las estadísticas de los departamentos de interés
     const totales = cursosFiltrados.reduce(
       (acc, curso) => {
-        acc.aprobados += curso.estadisticas.aprobados
-        acc.noAprobados += curso.estadisticas.noAprobados
-        acc.noInscritos += curso.estadisticas.noInscritos
+        // Si hay departamentos seleccionados, solo sumamos esos. Si no, sumamos todos (los de los docentes)
+        const deptoIdsAIncluir = departamentosSeleccionados.length > 0 
+          ? departamentosSeleccionados 
+          : Object.keys(curso.statsPorDeptoDocente)
+
+        deptoIdsAIncluir.forEach(deptoId => {
+          const stats = curso.statsPorDeptoDocente[deptoId]
+          if (stats) {
+            acc.aprobados += stats.aprobados
+            acc.noAprobados += stats.noAprobados
+            acc.noInscritos += stats.noInscritos
+          }
+        })
         return acc
       },
       { aprobados: 0, noAprobados: 0, noInscritos: 0 }
@@ -170,92 +161,50 @@ export default function GraficosCursos() {
     setEstadisticasCurso(totales)
   }, [cursosSeleccionados, departamentosSeleccionados, cursos])
 
-  // Calcular porcentajes
-  const totalCursos = estadisticasCurso.aprobados + estadisticasCurso.noAprobados + estadisticasCurso.noInscritos
-  const porcentajeAprobados = totalCursos > 0 ? Math.round((estadisticasCurso.aprobados / totalCursos) * 100) : 0
-  const porcentajeNoAprobados = totalCursos > 0 ? Math.round((estadisticasCurso.noAprobados / totalCursos) * 100) : 0
-  const porcentajeNoInscritos = totalCursos > 0 ? Math.round((estadisticasCurso.noInscritos / totalCursos) * 100) : 0
+  const totalDocentes = estadisticasCurso.aprobados + estadisticasCurso.noAprobados + estadisticasCurso.noInscritos
+  const porcentajeAprobados = totalDocentes > 0 ? Math.round((estadisticasCurso.aprobados / totalDocentes) * 100) : 0
+  const porcentajeNoAprobados = totalDocentes > 0 ? Math.round((estadisticasCurso.noAprobados / totalDocentes) * 100) : 0
+  const porcentajeNoInscritos = totalDocentes > 0 ? Math.round((estadisticasCurso.noInscritos / totalDocentes) * 100) : 0
 
-  // Configuración del gráfico
   const chartOptions = {
     labels: ["Aprobado", "Reprobado", "Inscrito/En Progreso"],
     colors: ["#10b981", "#ef4444", "#3b82f6"],
-    legend: {
-      position: "bottom" as const,
-    },
-    responsive: [
-      {
-        breakpoint: 480,
-        options: {
-          chart: {
-            width: 300,
-          },
-          legend: {
-            position: "bottom" as const,
-          },
-        },
-      },
-    ],
+    legend: { position: "bottom" as const },
+    responsive: [{
+      breakpoint: 480,
+      options: { chart: { width: 300 }, legend: { position: "bottom" as const } },
+    }],
   }
 
-  const chartSeries = [
-    estadisticasCurso.aprobados,
-    estadisticasCurso.noAprobados,
-    estadisticasCurso.noInscritos
-  ]
+  const chartSeries = [estadisticasCurso.aprobados, estadisticasCurso.noAprobados, estadisticasCurso.noInscritos]
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <BreadcrumbNav current="GRÁFICOS CURSOS" />
-        <div className="bg-white rounded-lg shadow p-6">
-          <h1 className="text-2xl font-bold mb-6 text-gray-800">Gráficos de Estadísticas</h1>
-          <div className="flex flex-col items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-4" />
-            <p className="text-gray-600">Cargando estadísticas...</p>
-          </div>
-        </div>
+  if (loading) return (
+    <div className="space-y-6">
+      <BreadcrumbNav current="GRÁFICOS" />
+      <div className="bg-white rounded-lg shadow p-6 flex flex-col items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-4" />
+        <p className="text-gray-600">Cargando estadísticas por departamento docente...</p>
       </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <BreadcrumbNav current="GRÁFICOS CURSOS" />
-        <div className="bg-white rounded-lg shadow p-6">
-          <h1 className="text-2xl font-bold mb-6 text-gray-800">Gráficos de Estadísticas</h1>
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-            <p className="text-red-600 font-semibold mb-2">Error al cargar estadísticas</p>
-            <p className="text-red-700 text-sm mb-4">{error}</p>
-            <Button onClick={cargarDatos} className="bg-red-600 hover:bg-red-700">
-              Reintentar
-            </Button>
-          </div>
-        </div>
-      </div>
-    )
-  }
+    </div>
+  )
 
   return (
     <div className="space-y-6">
-      <BreadcrumbNav current="GRÁFICOS CURSOS" />
+      <BreadcrumbNav current="GRÁFICOS" />
 
       <div className="bg-white rounded-lg shadow p-6">
-        <h1 className="text-2xl font-bold mb-6 text-gray-800">Gráficos de Estadísticas</h1>
+        <h1 className="text-2xl font-bold mb-6 text-gray-800">Gráficos de Estadísticas (Docentes)</h1>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="mb-6">
-            <TabsTrigger value="cursos">Progreso de Cursos</TabsTrigger>
+            <TabsTrigger value="cursos">Progreso por Departamento Docente</TabsTrigger>
           </TabsList>
 
           <TabsContent value="cursos">
-            {/* Filtros */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              {/* Filtro de Cursos */}
               <div className="border rounded-md p-4">
-                <Label htmlFor="curso-filter" className="mb-2 block font-medium">
-                  Seleccionar Cursos
-                </Label>
+                <Label className="mb-2 block font-medium">1. Filtrar por Cursos</Label>
                 <div className="max-h-60 overflow-y-auto">
                   {cursos.map((curso) => (
                     <div key={curso.id} className="flex items-center mb-2">
@@ -265,30 +214,21 @@ export default function GraficosCursos() {
                         className="mr-2"
                         checked={cursosSeleccionados.includes(curso.id)}
                         onChange={(e) => {
-                          if (e.target.checked) {
-                            setCursosSeleccionados([...cursosSeleccionados, curso.id])
-                          } else {
-                            setCursosSeleccionados(cursosSeleccionados.filter((id) => id !== curso.id))
-                          }
+                          if (e.target.checked) setCursosSeleccionados([...cursosSeleccionados, curso.id])
+                          else setCursosSeleccionados(cursosSeleccionados.filter((id) => id !== curso.id))
                         }}
                       />
-                      <label htmlFor={`curso-${curso.id}`} className="text-sm">
-                        {curso.nombre} ({curso.departamentoNombre})
+                      <label htmlFor={`curso-${curso.id}`} className="text-sm cursor-pointer">
+                        {curso.nombre}
                       </label>
                     </div>
                   ))}
                 </div>
-                {cursosSeleccionados.length > 0 && (
-                  <Button variant="outline" size="sm" className="mt-2" onClick={() => setCursosSeleccionados([])}>
-                    Limpiar selección
-                  </Button>
-                )}
               </div>
 
+              {/* Filtro de Departamentos de los Docentes */}
               <div className="border rounded-md p-4">
-                <Label htmlFor="departamento-filter" className="mb-2 block font-medium">
-                  Seleccionar Departamentos
-                </Label>
+                <Label className="mb-2 block font-medium">2. Seleccionar Departamentos (Docentes)</Label>
                 <div className="max-h-60 overflow-y-auto">
                   {departamentos.map((depto) => (
                     <div key={depto.id} className="flex items-center mb-2">
@@ -298,90 +238,64 @@ export default function GraficosCursos() {
                         className="mr-2"
                         checked={departamentosSeleccionados.includes(depto.id)}
                         onChange={(e) => {
-                          if (e.target.checked) {
-                            setDepartamentosSeleccionados([...departamentosSeleccionados, depto.id])
-                          } else {
-                            setDepartamentosSeleccionados(departamentosSeleccionados.filter((d) => d !== depto.id))
-                          }
+                          if (e.target.checked) setDepartamentosSeleccionados([...departamentosSeleccionados, depto.id])
+                          else setDepartamentosSeleccionados(departamentosSeleccionados.filter((d) => d !== depto.id))
                         }}
                       />
-                      <label htmlFor={`depto-${depto.id}`} className="text-sm">
+                      <label htmlFor={`depto-${depto.id}`} className="text-sm cursor-pointer">
                         {depto.nombre}
                       </label>
                     </div>
                   ))}
                 </div>
-                {departamentosSeleccionados.length > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-2"
-                    onClick={() => setDepartamentosSeleccionados([])}
-                  >
-                    Limpiar selección
-                  </Button>
-                )}
               </div>
             </div>
 
-            {/* Porcentajes */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            {/* Cuadros de Porcentajes */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-center">
               <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                <h3 className="text-green-800 font-medium">Aprobado</h3>
+                <h3 className="text-green-800 font-medium text-xs uppercase">Aprobados</h3>
                 <p className="text-3xl font-bold text-green-600">{porcentajeAprobados}%</p>
               </div>
               <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-                <h3 className="text-red-800 font-medium">Reprobado</h3>
+                <h3 className="text-red-800 font-medium text-xs uppercase">Reprobados</h3>
                 <p className="text-3xl font-bold text-red-600">{porcentajeNoAprobados}%</p>
               </div>
               <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                <h3 className="text-blue-800 font-medium">Inscrito/En Progreso</h3>
+                <h3 className="text-blue-800 font-medium text-xs uppercase">En Progreso</h3>
                 <p className="text-3xl font-bold text-blue-600">{porcentajeNoInscritos}%</p>
               </div>
             </div>
 
-            {/* Gráfico de torta */}
-            <div className="mb-6">
-              <div className="flex justify-center">
-                {typeof window !== "undefined" && totalCursos > 0 && (
-                  <Chart options={chartOptions} series={chartSeries} type="pie" width="380" />
+            {/* Gráfico ApexCharts */}
+            <div className="mb-8 flex justify-center bg-gray-50 py-6 rounded-xl border border-dashed">
+                {typeof window !== "undefined" && totalDocentes > 0 ? (
+                  <Chart options={chartOptions} series={chartSeries} type="pie" width="400" />
+                ) : (
+                  <p className="text-gray-500 italic py-12">No hay datos para los filtros seleccionados</p>
                 )}
-                {totalCursos === 0 && (
-                  <div className="text-center py-12">
-                    <p className="text-gray-500">
-                      Selecciona cursos o departamentos para ver las estadísticas
-                    </p>
-                  </div>
-                )}
-              </div>
             </div>
 
-            {/* Cantidades */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="text-lg font-medium mb-3">Resumen de Docentes</h3>
-              <ul className="space-y-2">
+            {/* Cantidades detalladas */}
+            <div className="bg-gray-50 p-4 rounded-lg border">
+              <h3 className="text-lg font-medium mb-3">Resumen de Participación</h3>
+              <ul className="space-y-2 text-sm">
                 <li className="flex items-center">
                   <span className="w-3 h-3 bg-green-500 rounded-full mr-2"></span>
-                  <span>
-                    <strong>{estadisticasCurso.aprobados}</strong> docentes han aprobado
-                  </span>
+                  <span><strong>{estadisticasCurso.aprobados}</strong> docentes aprobados</span>
                 </li>
                 <li className="flex items-center">
                   <span className="w-3 h-3 bg-red-500 rounded-full mr-2"></span>
-                  <span>
-                    <strong>{estadisticasCurso.noAprobados}</strong> docentes han reprobado
-                  </span>
+                  <span><strong>{estadisticasCurso.noAprobados}</strong> docentes reprobados</span>
                 </li>
                 <li className="flex items-center">
                   <span className="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>
-                  <span>
-                    <strong>{estadisticasCurso.noInscritos}</strong> docentes están inscritos o en progreso
-                  </span>
+                  <span><strong>{estadisticasCurso.noInscritos}</strong> docentes activos/inscritos</span>
                 </li>
               </ul>
               <div className="mt-4 pt-4 border-t border-gray-200">
-                <p className="text-sm text-gray-600">
-                  Total de docentes: <strong>{totalCursos}</strong>
+                <p className="text-xs text-gray-500">
+                  Total de registros analizados: <strong>{totalDocentes}</strong>
                 </p>
               </div>
             </div>

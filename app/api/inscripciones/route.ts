@@ -1,7 +1,7 @@
+// app/api/inscripciones/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-// ✅ Aumento de timeout de ejecución para entornos Serverless (Vercel)
 export const maxDuration = 60; 
 
 export async function GET(req: Request) {
@@ -11,15 +11,13 @@ export async function GET(req: Request) {
     const usuarioId = searchParams.get("usuarioId") ?? searchParams.get("userId");
     const cursoId = searchParams.get("cursoId");
 
-    const where: any = {};
+    const where: any = { deletedAt: null }; // Siempre filtrar eliminados
     if (estado) {
-      // ✅ Hacemos que la búsqueda sea insensible a mayúsculas
       where.estado = { equals: estado, mode: 'insensitive' };
     }
     if (usuarioId) where.userId = usuarioId;
     if (cursoId) where.cursoId = cursoId;
 
-    // ✅ Uso de transacción con timeout aumentado (20 segundos) para evitar errores de carga lenta
     const inscripciones = await prisma.$transaction(async (tx) => {
       return await tx.inscripcionCurso.findMany({
         where,
@@ -30,7 +28,13 @@ export async function GET(req: Request) {
               name: true,
               apellido: true,
               email: true,
-              departamento: { select: { nombre: true } },
+              departamentoId: true, // ✅ CLAVE: Necesitamos este ID para agrupar en el gráfico
+              departamento: { 
+                select: { 
+                  id: true, 
+                  nombre: true 
+                } 
+              },
             },
           },
           curso: {
@@ -44,7 +48,7 @@ export async function GET(req: Request) {
         orderBy: { createdAt: "desc" },
       });
     }, {
-      timeout: 20000 // Solución al error de Interactive Transaction timeout
+      timeout: 20000 
     });
 
     return NextResponse.json(inscripciones);

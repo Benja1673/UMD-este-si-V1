@@ -4,8 +4,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import nodemailer from "nodemailer";
+import fs from "fs"; 
+import path from "path"; 
 
-// ✅ Aumento de timeout de ejecución para entornos Serverless (Vercel)
 export const maxDuration = 60; 
 
 export async function POST(req: Request) {
@@ -37,8 +38,7 @@ export async function POST(req: Request) {
 
     if (!certificado) return NextResponse.json({ error: "Certificado no encontrado" }, { status: 404 });
 
-    // 3. NUEVO FLUJO: Obtener el curso vinculado mediante la tabla CondicionServicio
-    // Buscamos la condición que vincula este servicio de tipo CERTIFICADO con un curso
+    // 3. Obtener el curso vinculado mediante la tabla CondicionServicio
     const condicion = await prisma.condicionServicio.findFirst({
       where: {
         servicioId: certificadoId,
@@ -46,82 +46,282 @@ export async function POST(req: Request) {
         deletedAt: null
       },
       include: {
-        curso: true // Traemos todos los datos del curso (incluyendo los nuevos campos)
+        curso: true 
       }
     });
 
     const curso = condicion?.curso;
 
-    // 4. Variables para el documento y correo (Priorizando datos del curso sobre el título del certificado)
+    // 4. Variables para el documento
     const nombreCompleto = `${usuario.name || ''} ${usuario.apellido || ''}`.trim();
     const rut = usuario.rut || 'Sin RUT';
     const emailSolicitante = usuario.email || 'Sin correo';
     
-    // Si no hay curso vinculado por error, usamos los datos del certificado por seguridad
     const nombreCurso = curso?.nombre || certificado.titulo;
     const semestre = curso?.semestre || 1;
     const anio = curso?.ano || new Date().getFullYear();
     const duracion = curso?.duracion || 0;
     const modalidad = curso?.modalidad || 'Virtual';
 
-    const fechaActual = new Date();
-    const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-    const dia = fechaActual.getDate();
-    const mes = meses[fechaActual.getMonth()];
-    const anioEmision = fechaActual.getFullYear();
+    // Cargar la imagen local en Base64 para que Puppeteer la procese correctamente
+    let logoBase64 = "";
+    try {
+      const imagePath = path.join(process.cwd(), "public", "Logoutem-1.png");
+      const imageBuffer = fs.readFileSync(imagePath);
+      logoBase64 = `data:image/png;base64,${imageBuffer.toString("base64")}`;
+    } catch (err) {
+      console.error("No se pudo cargar el logo local:", err);
+      logoBase64 = ""; // Fallback vacío
+    }
 
-    // 5. HTML del Certificado
+    // 5. HTML Y CSS DEL NUEVO FORMATO (Con ajuste de firma más abajo)
     const html = `
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CONSTANCIA CURSO UTEM</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Constancia UTEM</title>
     <style>
-        body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 0; background-color: #ffffff; }
-        .certificado-a4 { width: 210mm; height: 297mm; margin: 0 auto; padding: 0; position: relative; }
-        .header { text-align: center; color: #ffffff; background-color: #00688B; padding: 40px 0 20px 0; -webkit-print-color-adjust: exact; }
-        .utem-nombre { font-size: 1.2em; font-weight: bold; letter-spacing: 5px; margin: 5px 0; }
-        .universidad-nombre { font-size: 2.2em; line-height: 1.1; font-weight: bold; margin: 5px 0; letter-spacing: 1px; }
-        .estado-chile { font-size: 1.0em; font-style: italic; margin: 10px 0 0 0; padding-bottom: 20px; }
-        .contenido { padding: 40px 50px 20px 50px; text-align: center; color: #333; }
-        .titulo-constancia { font-size: 2.5em; font-weight: bold; color: #000; margin: 0 0 40px 0; }
-        .texto-general { font-size: 1.0em; line-height: 1.6; margin-bottom: 15px; }
-        .datos-persona, .nombre-curso { font-size: 1.1em; color: #000; margin: 10px 0 20px 0; font-weight: bold; }
-        .nombre-curso { font-size: 1.2em; }
-        .footer { position: absolute; bottom: 50px; left: 50px; right: 50px; text-align: center; color: #333; }
-        .atentamente { font-size: 1.0em; margin: 50px 0 80px 0; }
-        .nombre-director { font-size: 1.0em; font-weight: bold; margin: 0; }
-        .cargo-director { font-size: 1.0em; margin: 5px 0 0 0; }
-        .fecha-emision { font-size: 0.8em; margin-top: 50px; text-align: right; }
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #ffffff;
+        }
+
+        .certificado {
+            width: 216mm;
+            height: 279mm;
+            background-color: #fff;
+            /* Ajustado: Menos padding inferior (1.5cm) para permitir que la firma baje más */
+            padding: 2.5cm 2cm 1.5cm 2cm;
+            box-sizing: border-box;
+            position: relative;
+            overflow: hidden;
+            color: #000;
+            margin: 0 auto;
+        }
+
+        /* Marca de Agua */
+        .watermark-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 70%;
+            height: auto;
+            z-index: 0;
+            pointer-events: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .watermark-image {
+            width: 100%;
+            opacity: 0.15; 
+        }
+
+        .contenido-visible {
+            position: relative;
+            z-index: 2;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Encabezado */
+        .header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .logo {
+            width: 80px;
+            height: auto;
+        }
+
+        .header-separator {
+            width: 1px;
+            height: 45px;
+            background-color: #005596;
+            margin: 0 15px;
+        }
+
+        .header-text {
+            font-family: Arial, sans-serif;
+            color: #005596;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header-text .unidad {
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        .header-text .direccion {
+            font-size: 0.65em;
+            text-transform: uppercase;
+            color: #668bad;
+            margin-top: 2px;
+        }
+
+        .titulo-constancia {
+            text-align: center;
+            font-size: 1.8em;
+            font-weight: 900;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+        }
+
+        .cuerpo {
+            text-align: center;
+            font-size: 1.1em;
+            line-height: 1.6;
+        }
+
+        .cuerpo p {
+            margin: 10px 0;
+        }
+
+        .nombre-persona {
+            font-size: 1.1em;
+            margin: 20px 0 !important;
+        }
+
+        .nombre-persona strong {
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .run-label {
+            margin-left: 10px;
+            font-weight: normal;
+        }
+
+        .curso-nombre {
+            color: #005596; 
+            font-size: 1.4em;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin: 25px auto;
+            max-width: 90%;
+            line-height: 1.3;
+        }
+
+        .detalles {
+            font-size: 1em;
+        }
+
+        .modalidad {
+            text-transform: uppercase;
+        }
+
+        .texto-cierre {
+            margin-top: 40px !important;
+            font-size: 0.95em;
+        }
+
+        .atentamente {
+            margin-top: 30px !important;
+        }
+
+        /* Pie de página y Firma - Ajustado para estar más abajo */
+        .footer {
+            display: flex;             
+            justify-content: center;
+            width: 100%;
+            /* Empuja todo el bloque hacia abajo */
+            margin-top: auto; 
+            /* Eliminado padding-bottom para ganar espacio hacia abajo */
+            padding-bottom: 0;
+        }
+
+        .firma-bloque {
+            text-align: center;
+            width: 300px;
+            /* La línea de firma */
+            border-top: 2px solid #000; 
+            padding-top: 10px;
+        }
+
+        .nombre-director {
+            font-weight: bold;
+            font-size: 1.1em;
+            margin: 0;
+            color: #000;
+        }
+
+        .cargo-director {
+            margin: 5px 0 0 0;
+            font-size: 0.9em;
+            color: #000;
+        }
+
+        @media print {
+            body { -webkit-print-color-adjust: exact; }
+        }
     </style>
 </head>
 <body>
-    <div class="certificado-a4">
-        <div class="header">
-            <h1 class="utem-nombre">UTEM</h1>
-            <h2 class="universidad-nombre">UNIVERSIDAD<br>TECNOLÓGICA<br>METROPOLITANA</h2>
-            <p class="estado-chile">del Estado de Chile</p>
+
+    <div class="certificado">
+        
+        <div class="watermark-container">
+            <img src="${logoBase64}" alt="" class="watermark-image">
         </div>
-        <div class="contenido">
-            <h3 class="titulo-constancia">CONSTANCIA</h3>
-            <p class="texto-general">Se otorga la presente constancia al Sr (a).</p>
-            <p class="datos-persona"><strong>${nombreCompleto}, RUN: ${rut},</strong></p>
-            <p class="texto-general">por su aprobación de la instancia</p>
-            <p class="nombre-curso"><strong>${nombreCurso},</strong></p>
-            <p class="texto-general">realizada en el ${semestre}° semestre del año académico ${anio}.</p>
-            <p class="texto-general">Dicha instancia tuvo un total de ${duracion} horas cronológicas, y fue realizada en modalidad ${modalidad}.</p>
-            <p class="texto-general" style="margin-top: 30px;">Se extiende la presente constancia para conocimiento y fines pertinentes.</p>
-        </div>
-        <div class="footer">
-            <p class="atentamente">Atentamente,</p>
-            <div class="firma-container">
-                <p class="nombre-director"><strong>Director de Docencia</strong></p>
-                <p class="cargo-director">Universidad Tecnológica Metropolitana</p>
-            </div>
-            <p class="fecha-emision"><strong>Santiago, ${dia} de ${mes} de ${anioEmision}</strong></p>
+
+        <div class="contenido-visible">
+            
+            <header class="header">
+                <img src="${logoBase64}" alt="Logo UTEM" class="logo"> 
+                <div class="header-separator"></div>
+                <div class="header-text">
+                    <span class="unidad">Unidad de<br>Mejoramiento Docente</span>
+                    <span class="direccion">DIRECCIÓN GENERAL DE DOCENCIA</span>
+                </div>
+            </header>
+
+            <h1 class="titulo-constancia">C O N S T A N C I A</h1>
+
+            <main class="cuerpo">
+                <p>Se otorga la presente constancia al Sr (a).</p>
+
+                <p class="nombre-persona">
+                    <strong>${nombreCompleto}</strong> <span class="run-label">RUN:</span> <strong>${rut}</strong>,
+                </p>
+
+                <p>por su aprobación de la instancia</p>
+
+                <div class="curso-nombre">
+                    ${nombreCurso}
+                </div>
+
+                <div class="detalles">
+                    <p>realizada en el ${semestre}° semestre del año académico ${anio},</p>
+                    <p>Dicha instancia tuvo un total de <strong>${duracion}</strong> horas cronológicas, y fue realizada en</p>
+                    <p>modalidad <strong class="modalidad">${modalidad}</strong></p>
+                </div>
+
+                <p class="texto-cierre">
+                    Se extiende la presente constancia para conocimiento y fines pertinentes.
+                </p>
+
+                <p class="atentamente">Atentamente,</p>
+            </main>
+
+            <footer class="footer">
+                <div class="firma-bloque">
+                    <p class="nombre-director">Director de Docencia</p>
+                    <p class="cargo-director">Universidad Tecnológica Metropolitana</p>
+                </div>
+            </footer>
         </div>
     </div>
+
 </body>
 </html>
     `;
@@ -141,6 +341,7 @@ export async function POST(req: Request) {
         executablePath: await chromium.executablePath(),
         headless: chromium.headless,
       });
+
     } else {
       const puppeteer = require('puppeteer');
       browser = await puppeteer.launch({
@@ -153,7 +354,7 @@ export async function POST(req: Request) {
     await page.setContent(html, { waitUntil: 'networkidle0' });
     
     const pdfBuffer = await page.pdf({
-      format: 'A4',
+      format: 'Letter',
       printBackground: true,
     });
 
@@ -170,7 +371,7 @@ export async function POST(req: Request) {
 
     const mailOptions = {
       from: process.env.EMAIL_USER,
-      to: "proyectoumd@gmail.com",
+      to: "proyectoumd@gmail.com", 
       subject: `Solicitud de Firma de Certificado: ${nombreCompleto}`,
       text: `${nombreCompleto}, rut ${rut}, con correo ${emailSolicitante}, ha solicitado este certificado de ${nombreCurso}. Está pendiente a firma.`,
       attachments: [
@@ -184,7 +385,6 @@ export async function POST(req: Request) {
 
     await transporter.sendMail(mailOptions);
 
-    // 8. RESPUESTA EXITOSA
     return NextResponse.json({ 
       success: true, 
       message: "Certificado solicitado correctamente." 
